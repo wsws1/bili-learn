@@ -21,6 +21,10 @@ function cleanupPipSession() {
   pipSession = null;
   clearInterval(s.hbTimer);
   try {
+    if (s.pauseFn) s.video.removeEventListener('pause', s.pauseFn);
+    if (s.playFn) s.video.removeEventListener('play', s.playFn);
+  } catch {}
+  try {
     if (s.playType === 'dash' && s.player && s.player.reset) s.player.reset();
     else if (s.playType === 'flv' && s.player && s.player.destroy) s.player.destroy();
   } catch {}
@@ -171,9 +175,10 @@ export default function renderPlayer(container, ctx, route) {
       renderDone();
       renderTabs();
       renderTab();
+      // 先确定续播进度，再启动播放器（否则视频已从 0 开始播放，seek 不生效）
+      await fetchResume();
       loadPlay();
       loadFavState();
-      fetchResume();
     } catch (e) {
       vLoading.classList.add('hidden');
       showError(e.message, () => loadInfo());
@@ -222,6 +227,7 @@ export default function renderPlayer(container, ctx, route) {
         if (!state.pendingSeek) video.play().catch(() => {});
       }
       vLoading.classList.add('hidden');
+      scheduleResumeSeek();
       startHeartbeat();
     } catch (e) {
       vLoading.classList.add('hidden');
@@ -327,10 +333,7 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   function destroyPlayer() {
-        state.pendingSeek = null;
-        state.seekApplied = true;
-        state.seekRetries = 0;
-      if (state.player) {
+        if (state.player) {
       try {
         if (state.play?.type === 'dash' && state.player.reset) state.player.reset();
         else if (state.play?.type === 'flv' && state.player.destroy) state.player.destroy();
@@ -373,6 +376,8 @@ export default function renderPlayer(container, ctx, route) {
     const info = state.info;
     if (!info || !video.duration) return;
     if (final && video.currentTime < 1) return;
+    // 暂停时周期性心跳不发（小窗里暂停后不再后台上报进度）
+    if (!final && video.paused) return;
     api.report({
       aid: info.aid,
       bvid: state.bvid,
@@ -436,29 +441,21 @@ export default function renderPlayer(container, ctx, route) {
     if (state.pendingSeek == null) console.log('[zhixue-web] 续播未命中: ' + state.bvid);
   }
 
-  function trySeek() {
-    if (state.disposed || state.pendingSeek == null || state.seekApplied) return;
-    if (!video.duration || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    // 等待可 seek 区间就绪（dash 初始化后才会出现），避免 seek 被复位到 0
-    const seekable = video.seekable && video.seekable.length;
-    if (!seekable) {
-      state.seekRetries += 1;
-      if (state.seekRetries < 30) {
-        setTimeout(trySeek, 250);
-        return;
-      }
-      state.pendingSeek = null;
-      state.seekApplied = true;
-      return;
-    }
-    const t = state.pendingSeek;
-    state.pendingSeek = null;
-    if (t > 3 && video.duration - t > 5) applySeek(t);
-    else state.seekApplied = true;
+  // 续播：播放器就绪后直接 seek + 播放（不依赖 may 不触发的 canplay/seekable 事件）
+  function scheduleResumeSeek() {
+    if (state.disposed || state.pendingSeek == null) return;
+    const go = () => {
+      if (state.disposed || state.seekApplied || state.pendingSeek == null) return;
+      applySeek(state.pendingSeek);
+    };
+    video.addEventListener('loadedmetadata', go, { once: true });
+    setTimeout(go, 800); // 兜底：元数据事件已错过或不来
   }
 
   function applySeek(t) {
+    if (state.disposed || state.seekApplied) return;
     console.log('[zhixue-web] 续播执行 seek: ' + t + 's type=' + (state.play?.type || ''));
+    state.pendingSeek = null;
     const doPlay = () => {
       if (state.disposed || state.seekApplied) return;
       state.seekApplied = true;
@@ -481,12 +478,11 @@ export default function renderPlayer(container, ctx, route) {
         video.currentTime = t;
       } catch {}
     }
-    // 兜底：2.5 秒内未触发 seeked 也继续播放
+    // 立即播放，让 dash 从 seek 位置缓冲
+    if (video.paused) video.play().catch(() => {});
+    // 兜底：2.5 秒内未触发 seeked 也标记完成
     setTimeout(doPlay, 2500);
   }
-  video.addEventListener('loadedmetadata', trySeek);
-  video.addEventListener('durationchange', trySeek);
-  video.addEventListener('canplay', trySeek);
 
   // ---------- 播放速度 / 画中画 ----------
   container.querySelector('#speedSel').addEventListener('change', (e) => {
@@ -825,7 +821,18 @@ export default function renderPlayer(container, ctx, route) {
     const inPip = document.pictureInPictureElement === video;
     if (inPip) {
       // 小窗播放中：把视频移到离屏容器继续播放，心跳继续上报
-      pipSession = { state, video, player: state.player, playType: state.play?.type, hbTimer: state.hbTimer };
+      pipSession = { state, video, player: state.player, playType: state.play?.type, hbTimer: state.hbTimer, report };
+      // 小窗暂停时停掉心跳，恢复播放再继续上报
+      pipSession.pauseFn = () => {
+        clearInterval(state.hbTimer);
+      };
+      pipSession.playFn = () => {
+        if (!pipSession) return;
+        clearInterval(state.hbTimer);
+        state.hbTimer = setInterval(() => report(false), 15000);
+      };
+      video.addEventListener('pause', pipSession.pauseFn);
+      video.addEventListener('play', pipSession.playFn);
       let host = document.getElementById('pipHost');
       if (!host) {
         host = document.createElement('div');

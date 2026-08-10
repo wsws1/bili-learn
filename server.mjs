@@ -153,7 +153,8 @@ function baseHeaders(extra = {}) {
     Accept: 'application/json, text/plain, */*',
     ...extra,
   };
-  if (cookieStore.cookies) h.Cookie = cookieStore.cookies;
+  // 清洗 Cookie 中的非 ASCII 字符（fetch 头只允许 Latin-1，否则登录/自检会抛 ByteString 错误）
+  if (cookieStore.cookies) h.Cookie = cookieStore.cookies.replace(/[^\x20-\x7E]/g, '');
   return h;
 }
 
@@ -600,7 +601,7 @@ async function qrPoll(key) {
 }
 
 function setRawCookies(raw) {
-  cookieStore.cookies = mergeCookies(cookieStore.cookies, raw);
+  cookieStore.cookies = mergeCookies(cookieStore.cookies, String(raw).replace(/[^\x20-\x7E]/g, ''));
   cookieStore.updatedAt = new Date().toISOString();
   saveCookies();
 }

@@ -212,7 +212,7 @@ function baseHeaders(extra = {}) {
     Accept: "application/json, text/plain, */*",
     ...extra
   };
-  if (cookieStore.cookies) h.Cookie = cookieStore.cookies;
+  if (cookieStore.cookies) h.Cookie = cookieStore.cookies.replace(/[^\x20-\x7E]/g, "");
   return h;
 }
 function netDetail(e) {
@@ -604,7 +604,7 @@ async function qrPoll(key) {
   return { json: j, inner, loggedIn: false };
 }
 function setRawCookies(raw) {
-  cookieStore.cookies = mergeCookies(cookieStore.cookies, raw);
+  cookieStore.cookies = mergeCookies(cookieStore.cookies, String(raw).replace(/[^\x20-\x7E]/g, ""));
   cookieStore.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   saveCookies();
 }
