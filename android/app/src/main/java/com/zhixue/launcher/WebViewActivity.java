@@ -49,6 +49,8 @@ public class WebViewActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setAllowFileAccess(true);
+        // 允许无手势自动播放（视频页加载后由 JS 直接 play）
+        s.setMediaPlaybackRequiresUserGesture(false);
         web.setBackgroundColor(0xFFF7F8FA);
         web.setWebViewClient(new WebViewClient());
         root.addView(web, new LinearLayout.LayoutParams(

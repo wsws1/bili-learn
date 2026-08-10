@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
@@ -38,19 +39,25 @@ public class KeepAliveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Intent launch = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("知学")
-                .setContentText("本地服务运行中，网页版数据实时可用")
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setOngoing(true)
-                .setContentIntent(pi)
-                .build();
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-        } else {
-            startForeground(NOTIF_ID, notification);
+        Log.i("zhixue", "keepalive onStartCommand startId=" + startId);
+        try {
+            Intent launch = new Intent(this, MainActivity.class);
+            PendingIntent pi = PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
+            Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setContentTitle("知学")
+                    .setContentText("本地服务运行中，网页版数据实时可用")
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setOngoing(true)
+                    .setContentIntent(pi)
+                    .build();
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIF_ID, notification);
+            }
+            Log.i("zhixue", "keepalive foreground started");
+        } catch (Exception e) {
+            Log.e("zhixue", "keepalive startForeground failed: " + e, e);
         }
         return START_STICKY;
     }

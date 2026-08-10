@@ -1,6 +1,7 @@
 package com.zhixue.launcher;
 
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,6 +21,11 @@ public class MainActivity extends BridgeActivity {
             startForegroundService(keepAlive);
         } else {
             startService(keepAlive);
+        }
+        // Android 13+ 申请通知权限，让“本地服务运行中”通知可见（也降低被系统杀后台的概率）
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
         }
     }
 
