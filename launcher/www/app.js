@@ -138,4 +138,31 @@ $('logBtn').addEventListener('click', async () => {
   }
 });
 
+// 外部访问地址检测：输入鸿蒙系统 WiFi IP，探测 http://IP:3210 是否可达
+$('lanForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ip = $('manualIp').value.trim();
+  if (!ip) return;
+  const url = ip.startsWith('http') ? ip.replace(/\/+$/, '') : 'http://' + ip + ':3210';
+  const out = $('checkResult');
+  out.textContent = '正在检测 ' + url + ' …';
+  out.className = 'check-result';
+  logDiag('检测外部地址: ' + url);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(url + '/api/ping', { signal: ctrl.signal });
+    clearTimeout(timer);
+    const j = await res.json();
+    const ok = res.ok && j && j.ok;
+    out.textContent = ok ? '可达：' + url + '，服务正常' : '可达但服务异常：' + url;
+    out.className = 'check-result ' + (ok ? 'ok' : 'err');
+    logDiag('外部地址检测: ' + (ok ? '可达' : '异常') + ' ' + url);
+  } catch (err) {
+    out.textContent = '不可达：' + err.message + '。请确认是鸿蒙系统在 WiFi 下的真实 IP';
+    out.className = 'check-result err';
+    logDiag('外部地址不可达: ' + url + ' ' + err.message);
+  }
+});
+
 boot();
