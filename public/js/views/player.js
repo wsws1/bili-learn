@@ -592,10 +592,17 @@ export default function renderPlayer(container, ctx, route) {
         } catch {}
       };
       try {
-        if (document.fullscreenElement) doEnter();
-        else await video.requestFullscreen().then(doEnter);
+        if (document.fullscreenElement) {
+          doEnter();
+        } else {
+          await video.requestFullscreen();
+          // 等全屏视频视图渲染一帧再进系统小窗，避免小窗截到整页画面（看起来像首页）
+          await new Promise((r) => setTimeout(r, 150));
+          doEnter();
+        }
       } catch (e) {
-        doEnter();
+        // 全屏没成功就不要硬进小窗，否则小窗会显示整个网页
+        ui.toast('请先全屏再开启小窗');
       }
       return;
     }
