@@ -224,13 +224,19 @@ export default function renderPlayer(container, ctx, route) {
         state.player = window.dashjs.MediaPlayer().create();
         state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
-        // 看门狗：dash 8 秒未出画面（无 stream 请求/卡住）→ 回退单文件播放
+        // 看门狗：dash 8 秒未出画面 → 判断是“没拉到数据”还是“自动播放被拦截”
         state.dashStallTimer = setTimeout(() => {
           if (state.disposed) return;
           if (video.paused && video.currentTime === 0 && !state.dashPlayed) {
-            console.log('[zhixue-web] dash 未出画面，回退单文件播放');
-            ui.toast('切换兼容播放模式…');
-            loadPlay(true);
+            // videoWidth 为 0 说明连视频元数据都没拿到（init 分片都没拉到）→ 回退；
+            // 已拿到元数据只是没播放 → 自动播放被拦截，提示点击播放
+            if (video.videoWidth === 0 && video.videoHeight === 0) {
+              console.log('[zhixue-web] dash 未拉到数据，回退单文件播放');
+              ui.toast('切换兼容播放模式…');
+              loadPlay(true);
+            } else {
+              vTapPlay.classList.remove('hidden');
+            }
           }
         }, 8000);
       } else if (r.type === 'flv') {
@@ -584,16 +590,19 @@ export default function renderPlayer(container, ctx, route) {
       host = document.createElement('div');
       host.id = 'floatPipHost';
       host.style.cssText =
-        'position:fixed;right:10px;bottom:74px;width:min(46vw,260px);aspect-ratio:16/9;background:#000;' +
+        'position:fixed;right:10px;bottom:74px;width:min(48vw,280px);aspect-ratio:16/9;background:#000;' +
         'border-radius:10px;overflow:hidden;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.35);';
       host.innerHTML =
         '<button id="floatPipClose" aria-label="关闭小窗" ' +
-        'style="position:absolute;top:4px;right:4px;z-index:2;width:26px;height:26px;border:none;border-radius:50%;' +
-        'background:rgba(0,0,0,.55);color:#fff;font-size:16px;line-height:24px;cursor:pointer">×</button>';
+        'style="position:absolute;top:6px;right:6px;z-index:5;width:30px;height:30px;border:none;border-radius:50%;' +
+        'background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:28px;cursor:pointer;text-align:center">×</button>';
       document.body.appendChild(host);
       host.querySelector('#floatPipClose').addEventListener('click', onPipLeave);
     }
+    // 清掉可能残留的旧视频，再放入当前视频，并强制铺满小窗（避免只显示局部/黑边异常）
+    host.querySelectorAll('video').forEach((v) => v.remove());
     host.appendChild(video);
+    video.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;z-index:1;background:#000;';
     pipSession = { mode: 'float', state, video, player: state.player, playType: state.play?.type, hbTimer: state.hbTimer, report };
     // 小窗暂停时停掉心跳，恢复播放再继续上报
     pipSession.pauseFn = () => clearInterval(state.hbTimer);

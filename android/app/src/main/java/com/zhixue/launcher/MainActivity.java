@@ -1,10 +1,13 @@
 package com.zhixue.launcher;
 
+import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
@@ -28,6 +31,46 @@ public class MainActivity extends BridgeActivity {
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
         }
+        checkBackgroundRestriction();
+    }
+
+    // 检测电池优化/后台限制，受限时引导用户去系统设置（自启动开关是否出现由 ROM 决定，无法代码控制）
+    private void checkBackgroundRestriction() {
+        boolean restricted = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) restricted = true;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am != null && am.isBackgroundRestricted()) restricted = true;
+        }
+        if (!restricted) return;
+
+        String m = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();
+        String guide;
+        if (m.contains("huawei") || m.contains("honor")) {
+            guide = "请在「设置 → 应用 → 应用启动管理 → 知学」选择“手动管理”，并打开“自启动 / 后台活动 / 关联启动”。";
+        } else if (m.contains("xiaomi") || m.contains("redmi")) {
+            guide = "请在「设置 → 应用设置 → 应用管理 → 知学 → 省电策略」选择“无限制”，并允许自启动。";
+        } else if (m.contains("oppo") || m.contains("vivo") || m.contains("oneplus")) {
+            guide = "请在「手机管家/设置 → 应用管理 → 知学」允许自启动与后台运行，并将电池设置为“不限制”。";
+        } else {
+            guide = "请在系统设置中允许“知学”忽略电池优化，并允许后台运行。";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("后台保活设置")
+                .setMessage(guide + "\n\n若设置页没有“自启动”选项，请到手机管家/安全中心的「应用启动管理」中开启。")
+                .setPositiveButton("去设置", (d, w) -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (Exception ignored) {
+                    }
+                })
+                .setNegativeButton("知道了", null)
+                .show();
     }
 
     private static class ExternalBrowserBridge {
