@@ -380,7 +380,7 @@ export default function renderPlayer(container, ctx, route) {
     }).catch((e) => {
       if (!state.reportFailed) {
         state.reportFailed = true;
-        ui.toast('进度上报失败：' + e.message);
+        console.warn('[zhixue-web] 进度上报失败：' + e.message);
       }
     });
   }

@@ -278,13 +278,14 @@ function normHist(h) {
 }
 
 // 历史内搜索：游标分页 + 标题本地过滤（最多翻 10 页 / 凑满 target 条）
-async function searchHistory(keyword, max, viewAt, target = 20) {
+async function searchHistory(keyword, max, viewAt, target = 20, onAbort) {
   const kw = keyword.toLowerCase();
   const matches = [];
   let curMax = max || '';
   let curViewAt = viewAt || '';
   let guard = 0;
   while (matches.length < target && guard < 10) {
+    if (onAbort && onAbort()) break;
     const params = { ps: 20 };
     if (curMax) params.max = curMax;
     if (curViewAt) params.view_at = curViewAt;
@@ -672,7 +673,7 @@ async function getAllFollowings(vmid, tagid = '', onAbort) {
   const pageNums = [];
   for (let p = 2; p <= totalPages; p++) pageNums.push(p);
   // 剩余页并发拉取（限 4 路），手机网络下总耗时从 20 次串行降到约 1/4
-  await mapLimit(pageNums, 4, async (page) => {
+  await mapLimit(pageNums, 3, async (page) => {
     if (onAbort && onAbort()) return;
     const r = await biliFetch('/x/relation/followings', { params: paramsOf(page) });
     const d = r.json?.data;
@@ -765,6 +766,10 @@ const favCheckCache = new Map(); // bvid -> { at, data }
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const path = u.pathname;
+  const reqStart = Date.now();
+  res.on('finish', () => {
+    console.log('[zhixue-node] ' + req.method + ' ' + path + ' -> ' + res.statusCode + ' ' + (Date.now() - reqStart) + 'ms');
+  });
 
   try {
     if (req.method === 'OPTIONS') {
@@ -910,7 +915,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (scope === 'history') {
-        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '');
+        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded);
         return sendJson(res, 200, {
           ok: true, code: 0, scope, keyword, page: 0,
           hasMore: histRes.hasMore, nextMax: histRes.nextMax, nextViewAt: histRes.nextViewAt,
@@ -1050,7 +1055,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/history') {
       const keyword = (q.get('keyword') || '').trim();
       if (keyword) {
-        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '');
+        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded);
         return sendJson(res, 200, {
           ok: true, code: 0, keyword,
           hasMore: histRes.hasMore, nextMax: histRes.nextMax, nextViewAt: histRes.nextViewAt,
@@ -1143,11 +1148,12 @@ const server = http.createServer(async (req, res) => {
       const foldersRes = await biliFetch('/x/v3/fav/folder/created/list-all', { params: { up_mid: login.mid, type: 0 } });
       const folders = foldersRes.json?.data?.list || [];
       // 并行（限流 5 路）检查各收藏夹，避免 45 个收藏夹串行拖慢
-      const out = await mapLimit(folders, 5, async (f) => {
+      const out = (await mapLimit(folders, 3, async (f) => {
+        if (res.destroyed || res.writableEnded) return null;
         const idsRes = await biliFetch('/x/v3/fav/resource/ids', { params: { media_id: f.id, platform: 'web' } });
         const ids = idsRes.json?.data || [];
         return { id: f.id, title: f.title, media_count: f.media_count, has: ids.some((x) => x.id === aid) };
-      });
+      })).filter(Boolean);
       const data = { ok: true, code: 0, bvid, aid, folders: out };
       favCheckCache.set(bvid, { at: Date.now(), data });
       return sendJson(res, 200, data);
