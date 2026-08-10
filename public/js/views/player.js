@@ -497,13 +497,23 @@ export default function renderPlayer(container, ctx, route) {
     state.qualityHeight = Number(e.target.value);
     loadPlayWithHeight();
   });
-  container.querySelector('#pipBtn').addEventListener('click', async () => {
+  const pipBtn = container.querySelector('#pipBtn');
+  // 画中画 JS API 仅桌面浏览器可用；Android/iOS 上 requestPictureInPicture 存在但不可用，
+  // 直接调用会抛 “Picture-in-Picture is not available”，所以移动端隐藏按钮
+  const pipSupported =
+    !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') &&
+    typeof document.pictureInPictureEnabled === 'boolean' &&
+    document.pictureInPictureEnabled &&
+    typeof video.requestPictureInPicture === 'function';
+  if (!pipSupported) pipBtn.classList.add('hidden');
+  pipBtn.addEventListener('click', async () => {
     try {
       if (document.pictureInPictureElement) await document.exitPictureInPicture();
       else if (video.requestPictureInPicture) await video.requestPictureInPicture();
       else ui.toast('当前浏览器不支持画中画');
     } catch (e) {
-      ui.toast('画中画失败：' + e.message);
+      pipBtn.classList.add('hidden');
+      ui.toast('当前浏览器不支持画中画');
     }
   });
 
