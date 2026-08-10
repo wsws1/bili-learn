@@ -124,4 +124,9 @@ export default function renderHistory(container, ctx) {
   moreBtn.addEventListener('click', () => load(false));
 
   load(true);
+
+  // 从后台回来（离开 ≥30 秒）自动硬刷新
+  const onResume = () => load(true, true);
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }

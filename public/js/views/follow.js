@@ -411,5 +411,18 @@ export default function renderFollow(container, ctx) {
   }
 
   boot();
-  return () => {};
+
+  // 从后台回来（离开 ≥30 秒）自动硬刷新动态
+  const onResume = () => {
+    state.dyn = [];
+    state.dynOffset = '';
+    state.dynTime = '';
+    state.spItems = [];
+    state.spOffset = '';
+    state.spTime = '';
+    state.spHasMore = false;
+    loadDyn(true, true);
+  };
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }

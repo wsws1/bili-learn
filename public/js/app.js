@@ -185,4 +185,18 @@ async function boot() {
   route();
 }
 
+// 从后台回到网页版（离开 ≥30 秒，缓存已过期）时派发 app:resume，各页面据此刷新数据，
+// 避免浏览器后台冻结/进程挂起导致的“回浏览器数据才出来”
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenAt = Date.now();
+  } else {
+    if (hiddenAt && Date.now() - hiddenAt >= 30000) {
+      document.dispatchEvent(new CustomEvent('app:resume'));
+    }
+    hiddenAt = 0;
+  }
+});
+
 boot();

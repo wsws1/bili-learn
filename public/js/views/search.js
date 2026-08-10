@@ -148,4 +148,11 @@ export default function renderSearch(container, ctx, route) {
     kwInput.value = state.keyword;
     run(true);
   }
+
+  // 从后台回来（离开 ≥30 秒）自动重新搜索，避免结果陈旧
+  const onResume = () => {
+    if (state.keyword) run(true);
+  };
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }

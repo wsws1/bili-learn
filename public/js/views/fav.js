@@ -78,6 +78,11 @@ function renderList(container, ctx) {
     render();
   });
   load();
+
+  // 从后台回来（离开 ≥30 秒）自动硬刷新列表
+  const onResume = () => load(true);
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }
 
 function renderDetail(container, ctx, mediaId) {
@@ -158,4 +163,9 @@ function renderDetail(container, ctx, mediaId) {
   });
 
   load(true);
+
+  // 从后台回来（离开 ≥30 秒）自动刷新当前收藏夹内容
+  const onResume = () => load(true);
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }

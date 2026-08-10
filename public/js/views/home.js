@@ -192,4 +192,13 @@ export default function renderHome(container, ctx) {
   });
   }
   loadFavs();
+
+  // 从后台回来（离开 ≥30 秒）自动硬刷新三个板块
+  const onResume = () => {
+    loadResume(true);
+    loadDyn(true);
+    loadFavs(true);
+  };
+  document.addEventListener('app:resume', onResume);
+  return () => document.removeEventListener('app:resume', onResume);
 }
