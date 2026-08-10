@@ -484,6 +484,22 @@ function buildMpd(dash) {
   </Period>
 </MPD>`;
 }
+function warmStreamUrl(url) {
+  if (!url) return;
+  try {
+    fetch(url, {
+      headers: { "User-Agent": UA, Referer: REFERER, Range: "bytes=0-0" },
+      signal: AbortSignal.timeout(8e3)
+    }).then((r) => {
+      try {
+        r.body?.cancel?.();
+      } catch {
+      }
+    }).catch(() => {
+    });
+  } catch {
+  }
+}
 async function getPlayData(bvid, cid, qn, codec, signal = null) {
   const qnNum = Number(qn) || 80;
   const want = codec === "avc" || codec === "hevc" || codec === "av1" ? codec : "auto";
@@ -507,6 +523,8 @@ async function getPlayData(bvid, cid, qn, codec, signal = null) {
       used = order.find((f) => videos.some((v) => codecFamily(v.codecs) === f)) || "avc";
       videos = videos.filter((v) => codecFamily(v.codecs) === used);
     }
+    for (const v of videos) warmStreamUrl(v.baseUrl);
+    warmStreamUrl(d2.dash.audio?.[0]?.baseUrl);
     return {
       ok: true,
       type: "dash",
@@ -533,6 +551,7 @@ async function getPlayData(bvid, cid, qn, codec, signal = null) {
       if (ext === "flv") type = "flv";
     } catch {
     }
+    warmStreamUrl(item.url);
     return {
       ok: true,
       type,
@@ -816,7 +835,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       if (req.headers.range) h.Range = req.headers.range;
       let up;
       try {
-        up = await fetch(streamUrl, { headers: h, redirect: "follow", signal: AbortSignal.timeout(1e4) });
+        up = await fetch(streamUrl, { headers: h, redirect: "follow", signal: AbortSignal.timeout(15e3) });
       } catch (e) {
         return sendJson(res, 502, { ok: false, error: "\u6D41\u4EE3\u7406\u8BF7\u6C42\u5931\u8D25\uFF1A" + (e.name === "TimeoutError" ? "\u4E0A\u6E38\u8D85\u65F6" : e.message) });
       }

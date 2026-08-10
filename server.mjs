@@ -474,6 +474,24 @@ function buildMpd(dash) {
 }
 
 // ---------- 播放流策略：先 DASH，失败回退单文件 ----------
+// 预热 CDN 连接（DNS/TLS/建连），手机端首次连 B 站 CDN 常要 1s+，
+// 提前发一个 Range 探测请求让连接池就绪，首个分片就能秒开
+function warmStreamUrl(url) {
+  if (!url) return;
+  try {
+    fetch(url, {
+      headers: { 'User-Agent': UA, Referer: REFERER, Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(8000),
+    })
+      .then((r) => {
+        try {
+          r.body?.cancel?.();
+        } catch {}
+      })
+      .catch(() => {});
+  } catch {}
+}
+
 async function getPlayData(bvid, cid, qn, codec, signal = null) {
   const qnNum = Number(qn) || 80; // 默认 1080P，无权限时 B 站自动降级
   const want = codec === 'avc' || codec === 'hevc' || codec === 'av1' ? codec : 'auto';
@@ -497,6 +515,8 @@ async function getPlayData(bvid, cid, qn, codec, signal = null) {
       used = order.find((f) => videos.some((v) => codecFamily(v.codecs) === f)) || 'avc';
       videos = videos.filter((v) => codecFamily(v.codecs) === used);
     }
+    for (const v of videos) warmStreamUrl(v.baseUrl);
+    warmStreamUrl(d2.dash.audio?.[0]?.baseUrl);
     return {
       ok: true,
       type: 'dash',
@@ -523,6 +543,7 @@ async function getPlayData(bvid, cid, qn, codec, signal = null) {
       const ext = new URL(item.url).pathname.split('.').pop().toLowerCase();
       if (ext === 'flv') type = 'flv';
     } catch {}
+    warmStreamUrl(item.url);
     return {
       ok: true,
       type,
@@ -847,7 +868,7 @@ const server = http.createServer(async (req, res) => {
       if (req.headers.range) h.Range = req.headers.range;
       let up;
       try {
-        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(15000) });
       } catch (e) {
         return sendJson(res, 502, { ok: false, error: '流代理请求失败：' + (e.name === 'TimeoutError' ? '上游超时' : e.message) });
       }
