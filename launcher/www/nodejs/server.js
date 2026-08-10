@@ -724,12 +724,34 @@ var MIME = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
   ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".eot": "application/vnd.ms-fontobject",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
   ".json": "application/json; charset=utf-8",
   ".mpd": "application/dash+xml; charset=utf-8",
   ".xml": "text/xml; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8"
 };
+var CACHE_IMMUTABLE = /* @__PURE__ */ new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".ico", ".svg", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".mp4", ".webm", ".mp3", ".m4a", ".ogg"]);
+function staticCacheControl(ext, rel) {
+  if (CACHE_IMMUTABLE.has(ext)) return "public, max-age=31536000";
+  if (rel.startsWith("vendor/")) return "public, max-age=604800";
+  return "no-cache";
+}
 var CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -867,7 +889,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const ext = (0, import_node_path.extname)(file);
       res.writeHead(200, {
         "Content-Type": MIME[ext] || "application/octet-stream",
-        "Cache-Control": "no-cache"
+        "Cache-Control": staticCacheControl(ext, rel)
       });
       return res.end((0, import_node_fs.readFileSync)(file));
     }
