@@ -127,4 +127,14 @@ $('retryBtn').addEventListener('click', () => {
   boot();
 });
 
+$('logBtn').addEventListener('click', async () => {
+  try {
+    const r = await api('/api/logs', 8000);
+    const lines = (r.logs || []).join('\n');
+    logDiag('--- 后端日志（最近 ' + (r.logs || []).length + ' 条）---\n' + (lines || '(空)'));
+  } catch (err) {
+    logDiag('获取后端日志失败: ' + err.message);
+  }
+});
+
 boot();

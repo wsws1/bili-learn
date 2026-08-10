@@ -1,6 +1,6 @@
 // 知学前端 API 客户端：只调本地 /api 代理
 async function request(path, options = {}) {
-  const { method = 'GET', params, body } = options;
+  const { method = 'GET', params, body, timeoutMs = 30000 } = options;
   let url = path;
   if (params) {
     const sp = new URLSearchParams();
@@ -15,7 +15,17 @@ async function request(path, options = {}) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(url, init);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`请求超时（${timeoutMs}ms）：${path}`);
+    throw new Error('网络错误：' + e.message + '（' + path + '）');
+  } finally {
+    clearTimeout(timer);
+  }
   let json;
   try {
     json = await res.json();

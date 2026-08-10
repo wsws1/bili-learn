@@ -50,7 +50,29 @@ var PUBLIC_DIR = process.env.BF_PUBLIC_DIR ? (0, import_node_path.normalize)(pro
 var DATA_DIR = process.env.BF_DATA_DIR || (0, import_node_path.join)(__dirname, "data");
 var COOKIE_FILE = (0, import_node_path.join)(DATA_DIR, "cookies.json");
 var PORT = Number(process.env.PORT || 3210);
-var HOST = process.env.BF_HOST || process.env.HOST || "0.0.0.0";
+var currentHost = process.env.BF_HOST || process.env.HOST || "0.0.0.0";
+var logBuffer = [];
+var MAX_LOGS = 300;
+var __origLog = console.log;
+var __origErr = console.error;
+function __pushLog(level, args) {
+  let text;
+  try {
+    text = args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+  } catch {
+    text = String(args);
+  }
+  logBuffer.push("[" + (/* @__PURE__ */ new Date()).toLocaleTimeString() + "][" + level + "] " + text);
+  if (logBuffer.length > MAX_LOGS) logBuffer.shift();
+}
+console.log = (...args) => {
+  __pushLog("log", args);
+  __origLog(...args);
+};
+console.error = (...args) => {
+  __pushLog("err", args);
+  __origErr(...args);
+};
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 var BILI_API = "https://api.bilibili.com";
 var BILI_PASSPORT = "https://passport.bilibili.com";
@@ -753,10 +775,13 @@ var server = import_node_http.default.createServer(async (req, res) => {
         service: "zhixue",
         node: process.version,
         port: PORT,
-        host: HOST,
-        lan: HOST !== "127.0.0.1",
+        host: currentHost,
+        lan: currentHost !== "127.0.0.1",
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`)
       });
+    }
+    if (req.method === "GET" && path === "/api/logs") {
+      return sendJson(res, 200, { ok: true, logs: logBuffer.slice(-200) });
     }
     if (req.method === "GET" && path === "/api/status") {
       const login = await checkLogin();
@@ -764,8 +789,8 @@ var server = import_node_http.default.createServer(async (req, res) => {
         ok: true,
         node: process.version,
         port: PORT,
-        host: HOST,
-        lan: HOST !== "127.0.0.1",
+        host: currentHost,
+        lan: currentHost !== "127.0.0.1",
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`),
         login,
         cookieNames: cookieNames(cookieStore.cookies)
@@ -1165,7 +1190,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
     }
   }
 });
-server.listen(PORT, HOST, () => {
+server.listen(PORT, currentHost, () => {
   console.log(`\u77E5\u5B66 started: http://localhost:${PORT}`);
   for (const ip of lanIPs()) console.log(`\u5C40\u57DF\u7F51\u8BBF\u95EE\uFF08\u540C\u4E00 WiFi\uFF09: http://${ip}:${PORT}`);
   console.log("Cookie \u4EC5\u4FDD\u5B58\u5728\u672C\u673A data/cookies.json\uFF0C\u8BF7\u52FF\u628A\u8BE5\u670D\u52A1\u66B4\u9732\u5230\u516C\u7F51\u3002");
@@ -1178,6 +1203,7 @@ if (process.env.BF_ANDROID === "1") {
         const lan = value === true || value === "on" || value === "1";
         const host = lan ? "0.0.0.0" : "127.0.0.1";
         console.log("[zhixue-node] set-lan received: " + String(value) + " -> bind " + host);
+        currentHost = host;
         try {
           (0, import_node_fs.writeFileSync)((0, import_node_path.join)(DATA_DIR, "settings.json"), JSON.stringify({ lan, host }, null, 2));
         } catch {

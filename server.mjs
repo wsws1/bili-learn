@@ -29,7 +29,31 @@ const DATA_DIR = process.env.BF_DATA_DIR || join(__dirname, 'data');
 const COOKIE_FILE = join(DATA_DIR, 'cookies.json');
 
 const PORT = Number(process.env.PORT || 3210);
-const HOST = process.env.BF_HOST || process.env.HOST || '0.0.0.0';
+let currentHost = process.env.BF_HOST || process.env.HOST || '0.0.0.0';
+
+// ---------- 日志收集：logcat 照常输出，同时进内存缓冲供 /api/logs 查询 ----------
+const logBuffer = [];
+const MAX_LOGS = 300;
+const __origLog = console.log;
+const __origErr = console.error;
+function __pushLog(level, args) {
+  let text;
+  try {
+    text = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  } catch {
+    text = String(args);
+  }
+  logBuffer.push('[' + new Date().toLocaleTimeString() + '][' + level + '] ' + text);
+  if (logBuffer.length > MAX_LOGS) logBuffer.shift();
+}
+console.log = (...args) => {
+  __pushLog('log', args);
+  __origLog(...args);
+};
+console.error = (...args) => {
+  __pushLog('err', args);
+  __origErr(...args);
+};
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -770,10 +794,14 @@ const server = http.createServer(async (req, res) => {
         service: 'zhixue',
         node: process.version,
         port: PORT,
-        host: HOST,
-        lan: HOST !== '127.0.0.1',
+        host: currentHost,
+        lan: currentHost !== '127.0.0.1',
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`),
       });
+    }
+
+    if (req.method === 'GET' && path === '/api/logs') {
+      return sendJson(res, 200, { ok: true, logs: logBuffer.slice(-200) });
     }
 
     if (req.method === 'GET' && path === '/api/status') {
@@ -782,8 +810,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         node: process.version,
         port: PORT,
-        host: HOST,
-        lan: HOST !== '127.0.0.1',
+        host: currentHost,
+        lan: currentHost !== '127.0.0.1',
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`),
         login,
         cookieNames: cookieNames(cookieStore.cookies),
@@ -1190,7 +1218,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, currentHost, () => {
   console.log(`知学 started: http://localhost:${PORT}`);
   for (const ip of lanIPs()) console.log(`局域网访问（同一 WiFi）: http://${ip}:${PORT}`);
   console.log('Cookie 仅保存在本机 data/cookies.json，请勿把该服务暴露到公网。');
@@ -1205,6 +1233,7 @@ if (process.env.BF_ANDROID === '1') {
         const lan = value === true || value === 'on' || value === '1';
         const host = lan ? '0.0.0.0' : '127.0.0.1';
         console.log('[zhixue-node] set-lan received: ' + String(value) + ' -> bind ' + host);
+        currentHost = host;
         try {
           writeFileSync(join(DATA_DIR, 'settings.json'), JSON.stringify({ lan, host }, null, 2));
         } catch {}
