@@ -782,9 +782,22 @@ const server = http.createServer(async (req, res) => {
       if (cr) outHeaders['Content-Range'] = cr;
       applyCors(res);
       res.writeHead(up.status, outHeaders);
+      // 空闲看门狗：传输中超过 10 秒无数据视为卡死，断开上游与客户端，
+      // 避免占满浏览器连接导致其他页面全部超时
+      let lastChunk = Date.now();
+      const guard = setInterval(() => {
+        if (Date.now() - lastChunk > 10000) {
+          try { up.body?.cancel(); } catch {}
+          try { res.destroy(); } catch {}
+        }
+      }, 5000);
+      res.on('close', () => {
+        try { up.body?.cancel(); } catch {}
+      });
       try {
         for await (const chunk of up.body) {
           if (res.destroyed) break;
+          lastChunk = Date.now();
           res.write(chunk);
         }
         if (!res.destroyed) {
@@ -798,6 +811,8 @@ const server = http.createServer(async (req, res) => {
             res.destroy();
           } catch {}
         }
+      } finally {
+        clearInterval(guard);
       }
       return;
     }

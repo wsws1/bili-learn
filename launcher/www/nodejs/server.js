@@ -762,9 +762,29 @@ var server = import_node_http.default.createServer(async (req, res) => {
       if (cr) outHeaders["Content-Range"] = cr;
       applyCors(res);
       res.writeHead(up.status, outHeaders);
+      let lastChunk = Date.now();
+      const guard = setInterval(() => {
+        if (Date.now() - lastChunk > 1e4) {
+          try {
+            up.body?.cancel();
+          } catch {
+          }
+          try {
+            res.destroy();
+          } catch {
+          }
+        }
+      }, 5e3);
+      res.on("close", () => {
+        try {
+          up.body?.cancel();
+        } catch {
+        }
+      });
       try {
         for await (const chunk of up.body) {
           if (res.destroyed) break;
+          lastChunk = Date.now();
           res.write(chunk);
         }
         if (!res.destroyed) {
@@ -780,6 +800,8 @@ var server = import_node_http.default.createServer(async (req, res) => {
           } catch {
           }
         }
+      } finally {
+        clearInterval(guard);
       }
       return;
     }
