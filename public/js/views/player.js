@@ -60,6 +60,7 @@ export default function renderPlayer(container, ctx, route) {
     noteKey: 'zhixue:note:' + bvid0,
     doneKey: 'zhixue:done:' + bvid0,
     qualityHeight: Number(localStorage.getItem('zhixue:quality')) || 0,
+    disposed: false,
   };
 
   container.innerHTML = `
@@ -154,6 +155,7 @@ export default function renderPlayer(container, ctx, route) {
 
   // ---------- 视频信息 ----------
   async function loadInfo() {
+    state.disposed = false;
     try {
       const r = await api.video(state.bvid);
       if (r.code !== 0) throw new Error(r.message || '视频信息获取失败');
@@ -205,7 +207,7 @@ export default function renderPlayer(container, ctx, route) {
         await loadScript('/vendor/dash.all.min.js');
         if (!window.dashjs) throw new Error('DASH 播放器不可用');
         state.player = window.dashjs.MediaPlayer().create();
-        state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, true);
+        state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
       } else if (r.type === 'flv') {
         await loadScript('/vendor/mpegts.js');
@@ -213,10 +215,10 @@ export default function renderPlayer(container, ctx, route) {
         state.player = window.mpegts.createPlayer({ type: 'flv', url: r.streamUrl, isLive: false });
         state.player.attachMediaElement(video);
         state.player.load();
-        state.player.play();
+        if (!state.pendingSeek) state.player.play();
       } else {
         video.src = r.streamUrl;
-        video.play().catch(() => {});
+        if (!state.pendingSeek) video.play().catch(() => {});
       }
       vLoading.classList.add('hidden');
       startHeartbeat();
@@ -284,17 +286,17 @@ export default function renderPlayer(container, ctx, route) {
       if (r.type === 'dash') {
         await loadScript('/vendor/dash.all.min.js');
         state.player = window.dashjs.MediaPlayer().create();
-        state.player.initialize(video, r.mpdUrl + '&height=' + h, true);
+      state.player.initialize(video, r.mpdUrl + '&height=' + h, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
       } else if (r.type === 'flv') {
         await loadScript('/vendor/mpegts.js');
         state.player = window.mpegts.createPlayer({ type: 'flv', url: r.streamUrl, isLive: false });
         state.player.attachMediaElement(video);
         state.player.load();
-        state.player.play();
+        if (!state.pendingSeek) state.player.play();
       } else {
         video.src = r.streamUrl;
-        video.play().catch(() => {});
+        if (!state.pendingSeek) video.play().catch(() => {});
       }
       vLoading.classList.add('hidden');
     } catch (e) {
@@ -314,7 +316,7 @@ export default function renderPlayer(container, ctx, route) {
       state.lastT = 0;
       await loadScript('/vendor/dash.all.min.js');
       state.player = window.dashjs.MediaPlayer().create();
-      state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, true);
+      state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
       renderCodecs(r.codecs, r.codec);
       vLoading.classList.add('hidden');
     } catch (e) {
@@ -324,7 +326,9 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   function destroyPlayer() {
-    if (state.player) {
+      state.pendingSeek = null;
+      state.seekApplied = true;
+      if (state.player) {
       try {
         if (state.play?.type === 'dash' && state.player.reset) state.player.reset();
         else if (state.play?.type === 'flv' && state.player.destroy) state.player.destroy();
@@ -429,14 +433,24 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   function trySeek() {
-    if (state.pendingSeek == null || state.seekApplied) return;
+    if (state.disposed || state.pendingSeek == null || state.seekApplied) return;
     if (!video.duration || !Number.isFinite(video.duration)) return;
     const t = state.pendingSeek;
     state.pendingSeek = null;
     if (t > 3 && video.duration - t > 5) {
-      video.currentTime = t;
+      // 等 seek 完成后再播放，避免 dash 复位到 0
+      const onSeeked = () => {
+        if (state.disposed) return;
+        state.seekApplied = true;
+        ui.toast('已续播到 ' + ui.fmtDur(t));
+        if (video.paused) video.play().catch(() => {});
+      };
+      video.addEventListener('seeked', onSeeked, { once: true });
+      try {
+        video.currentTime = t;
+      } catch {}
+    } else {
       state.seekApplied = true;
-      ui.toast('已续播到 ' + ui.fmtDur(t));
     }
   }
   video.addEventListener('loadedmetadata', trySeek);
@@ -794,6 +808,10 @@ export default function renderPlayer(container, ctx, route) {
       window.addEventListener('visibilitychange', onPipVisible);
       return;
     }
+    state.disposed = true;
+    try {
+      video.pause();
+    } catch {}
     clearInterval(state.hbTimer);
     report(true);
     window.removeEventListener('pagehide', onPageHide);
