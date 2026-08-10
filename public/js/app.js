@@ -1,5 +1,5 @@
 // 知学：入口 + 路由 + 全局壳
-import { api } from './api.js';
+import { api, abortAll } from './api.js';
 import * as ui from './ui.js';
 import renderLogin from './views/login.js';
 import renderHome from './views/home.js';
@@ -136,6 +136,8 @@ async function route() {
     } catch {}
     cleanup = null;
   }
+  // 离开页面立即取消该页所有未完成请求，释放浏览器连接，避免连锁阻塞
+  abortAll();
   const r = parseRoute();
   state.route = r;
   const c = ctx();

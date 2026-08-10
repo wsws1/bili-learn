@@ -1,6 +1,18 @@
 // 知学前端 API 客户端：只调本地 /api 代理
+// 正在进行的请求注册表：离开页面时统一取消，立即释放浏览器连接（避免连接池占满连锁阻塞）
+const activeControllers = new Set();
+
+export function abortAll() {
+  for (const c of activeControllers) {
+    try {
+      c.abort();
+    } catch {}
+  }
+  activeControllers.clear();
+}
+
 async function request(path, options = {}) {
-  const { method = 'GET', params, body, timeoutMs = 6000, retries = 1 } = options;
+  const { method = 'GET', params, body, timeoutMs = 6000, retries = 0 } = options;
   let url = path;
   if (params) {
     const sp = new URLSearchParams();
@@ -19,13 +31,18 @@ async function request(path, options = {}) {
   let lastErr = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    activeControllers.add(ctrl);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ctrl.abort();
+    }, timeoutMs);
     let res;
     try {
       res = await fetch(url, { ...init, signal: ctrl.signal });
     } catch (e) {
       lastErr = e.name === 'AbortError'
-        ? new Error(`请求超时（${timeoutMs}ms）：${path}`)
+        ? new Error(timedOut ? `请求超时（${timeoutMs}ms）：${path}` : '已取消（页面切换）')
         : new Error('网络错误：' + e.message + '（' + path + '）');
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, 1200));
@@ -34,6 +51,7 @@ async function request(path, options = {}) {
       throw lastErr;
     } finally {
       clearTimeout(timer);
+      activeControllers.delete(ctrl);
     }
     let json;
     try {
