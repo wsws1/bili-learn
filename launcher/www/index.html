@@ -47,6 +47,16 @@
     </div>
     <p class="muted center" id="hint">应用内打开：App 自带 WebView，不受后台冻结影响；外部打开：系统浏览器，共享 Chrome 登录态</p>
 
+    <section class="card">
+      <h2>后台保活</h2>
+      <p class="muted">切后台后网页版需要 App 在后台持续运行，请完成两步系统设置：</p>
+      <div class="row" style="gap:8px">
+        <button class="btn" id="batteryBtn" type="button" style="flex:1">电池优化白名单</button>
+        <button class="btn" id="startupBtn" type="button" style="flex:1">后台活动设置</button>
+      </div>
+      <p class="muted">鸿蒙/华为：设置 → 应用启动管理 → 知学 → 手动管理 → 打开“自启动 / 后台活动”</p>
+    </section>
+
     <button class="primary ghost" id="retryBtn" type="button" hidden>重试启动</button>
     <button class="primary ghost" id="logBtn" type="button">查看后端日志</button>
     <pre id="diag" class="diag">等待启动日志…</pre>

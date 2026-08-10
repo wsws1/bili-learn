@@ -42,3 +42,25 @@ window.openWebInApp = (url) => {
   window.open(url, '_blank');
   return Promise.resolve();
 };
+
+// 后台保活设置：跳系统“电池优化”白名单页（鸿蒙/华为后台限制的关键步骤）
+window.openBatterySettings = () => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.openBatterySettings === 'function') {
+        window.ExternalBrowser.openBatterySettings();
+      }
+    } catch {}
+  }
+};
+
+// 后台保活设置：跳应用详情页，引导开启自启动/后台活动
+window.openAppSettings = () => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.openAppSettings === 'function') {
+        window.ExternalBrowser.openAppSettings();
+      }
+    } catch {}
+  }
+};

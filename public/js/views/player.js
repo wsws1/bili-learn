@@ -66,6 +66,9 @@ export default function renderPlayer(container, ctx, route) {
     qualityHeight: Number(localStorage.getItem('zhixue:quality')) || 0,
     disposed: false,
     seekRetries: 0,
+    canMse: typeof window.MediaSource !== 'undefined' && !!window.MediaSource,
+    dashPlayed: false,
+    dashStallTimer: null,
   };
 
   container.innerHTML = `
@@ -198,14 +201,17 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   // ---------- 播放 ----------
-  async function loadPlay() {
+  async function loadPlay(forceNoDash = false) {
     vLoading.classList.remove('hidden');
     vError.classList.add('hidden');
     vTapPlay.classList.add('hidden');
     destroyPlayer();
     state.reportFailed = false;
+    state.dashPlayed = false;
+    clearTimeout(state.dashStallTimer);
     try {
-      const r = await api.play(state.bvid, state.cid);
+      // 浏览器不支持 MSE（MediaSource）时直接走单文件播放，dash 无法出流
+      const r = await api.play(state.bvid, state.cid, 80, 'auto', forceNoDash || !state.canMse);
       if (!r.ok) throw new Error(r.error || '播放流获取失败');
       state.play = r;
       renderQuality(r.acceptQuality || []);
@@ -218,13 +224,22 @@ export default function renderPlayer(container, ctx, route) {
         state.player = window.dashjs.MediaPlayer().create();
         state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
+        // 看门狗：dash 8 秒未出画面（无 stream 请求/卡住）→ 回退单文件播放
+        state.dashStallTimer = setTimeout(() => {
+          if (state.disposed) return;
+          if (video.paused && video.currentTime === 0 && !state.dashPlayed) {
+            console.log('[zhixue-web] dash 未出画面，回退单文件播放');
+            ui.toast('切换兼容播放模式…');
+            loadPlay(true);
+          }
+        }, 8000);
       } else if (r.type === 'flv') {
         await loadScript('/vendor/mpegts.js');
         if (!window.mpegts) throw new Error('FLV 播放器不可用');
         state.player = window.mpegts.createPlayer({ type: 'flv', url: r.streamUrl, isLive: false });
         state.player.attachMediaElement(video);
         state.player.load();
-        if (!state.pendingSeek) state.player.play();
+        if (!state.pendingSeek) safePlay();
       } else {
         video.src = r.streamUrl;
         if (!state.pendingSeek) safePlay();
@@ -531,7 +546,10 @@ export default function renderPlayer(container, ctx, route) {
     vTapPlay.classList.add('hidden');
     safePlay();
   });
-  video.addEventListener('playing', () => vTapPlay.classList.add('hidden'));
+  video.addEventListener('playing', () => {
+    state.dashPlayed = true;
+    vTapPlay.classList.add('hidden');
+  });
 
   // 小窗按钮：未播放时置灰禁用
   function updatePipBtn() {
@@ -582,6 +600,25 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   pipBtn.addEventListener('click', async () => {
+    // 应用内 WebView：先触发视频全屏，再进系统小窗（否则小窗会截取整页右上角）
+    if (window.AndroidPip && typeof window.AndroidPip.supports === 'function' && window.AndroidPip.supports()) {
+      if (video.paused) {
+        ui.toast('请先播放再开启小窗');
+        return;
+      }
+      const doEnter = () => {
+        try {
+          window.AndroidPip.enter();
+        } catch {}
+      };
+      try {
+        if (document.fullscreenElement) doEnter();
+        else await video.requestFullscreen().then(doEnter);
+      } catch (e) {
+        doEnter();
+      }
+      return;
+    }
     if (pipSupported) {
       try {
         if (document.pictureInPictureElement) {

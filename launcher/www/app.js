@@ -129,6 +129,16 @@ $('externalBtn').addEventListener('click', () => {
   window.openWeb(base);
 });
 
+$('batteryBtn').addEventListener('click', () => {
+  logDiag('打开电池优化白名单设置');
+  window.openBatterySettings();
+});
+
+$('startupBtn').addEventListener('click', () => {
+  logDiag('打开应用后台活动设置');
+  window.openAppSettings();
+});
+
 $('retryBtn').addEventListener('click', () => {
   diagLines.length = 0;
   boot();

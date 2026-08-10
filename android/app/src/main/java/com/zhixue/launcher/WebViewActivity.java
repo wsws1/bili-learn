@@ -1,13 +1,18 @@
 package com.zhixue.launcher;
 
 import android.app.Activity;
+import android.app.PictureInPictureParams;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Build;
+import android.util.Rational;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -96,6 +101,28 @@ public class WebViewActivity extends Activity {
             }
         };
         web.setWebChromeClient(chromeClient);
+        // 小窗桥接：前端先触发视频全屏，再调用 enter() 进入系统画中画（避免截取整页）
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public boolean supports() {
+                return Build.VERSION.SDK_INT >= 26;
+            }
+
+            @JavascriptInterface
+            public void enter() {
+                runOnUiThread(() -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode()) {
+                            PictureInPictureParams params = new PictureInPictureParams.Builder()
+                                    .setAspectRatio(new Rational(16, 9))
+                                    .build();
+                            enterPictureInPictureMode(params);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                });
+            }
+        }, "AndroidPip");
 
         root.addView(web, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -112,6 +139,17 @@ public class WebViewActivity extends Activity {
             web.goBack();
         } else {
             super.onBackPressed();
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        // 退出小窗：收起全屏视频视图，回到网页
+        if (!isInPictureInPictureMode) {
+            runOnUiThread(() -> {
+                if (chromeClient != null) chromeClient.onHideCustomView();
+            });
         }
     }
 

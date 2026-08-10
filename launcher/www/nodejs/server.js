@@ -500,7 +500,7 @@ function warmStreamUrl(url) {
   } catch {
   }
 }
-async function getPlayData(bvid, cid, qn, codec, signal = null) {
+async function getPlayData(bvid, cid, qn, codec, signal = null, noDash = false) {
   const qnNum = Number(qn) || 80;
   const want = codec === "avc" || codec === "hevc" || codec === "av1" ? codec : "auto";
   const r2 = await biliFetch("/x/player/wbi/playurl", {
@@ -509,7 +509,7 @@ async function getPlayData(bvid, cid, qn, codec, signal = null) {
     signal
   });
   const d2 = r2.json?.data;
-  if (r2.json?.code === 0 && d2?.dash?.video?.length) {
+  if (!noDash && r2.json?.code === 0 && d2?.dash?.video?.length) {
     const allCodecs = [...new Set((d2.dash.video || []).map((v) => codecFamily(v.codecs)))];
     let videos = d2.dash.video || [];
     let used = want;
@@ -1017,7 +1017,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const bvid = q.get("bvid") || "";
       const cid = q.get("cid") || "";
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: "\u7F3A\u5C11 bvid/cid \u53C2\u6570" });
-      const r = await getPlayData(bvid, cid, q.get("qn"), q.get("codec") || "auto", reqAbort.signal);
+      const r = await getPlayData(bvid, cid, q.get("qn"), q.get("codec") || "auto", reqAbort.signal, q.get("noDash") === "1");
       return sendJson(res, 200, r);
     }
     if (req.method === "GET" && path === "/api/play.mpd") {

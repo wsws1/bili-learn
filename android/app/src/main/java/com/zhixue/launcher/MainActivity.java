@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
 
@@ -51,6 +52,30 @@ public class MainActivity extends BridgeActivity {
             try {
                 Intent intent = new Intent(activity, WebViewActivity.class);
                 intent.putExtra("url", url);
+                activity.startActivity(intent);
+            } catch (Exception ignored) {
+            }
+        }
+
+        @JavascriptInterface
+        public void openBatterySettings() {
+            try {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + activity.getPackageName()));
+                activity.startActivity(intent);
+            } catch (Exception e) {
+                try {
+                    activity.startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + activity.getPackageName()));
                 activity.startActivity(intent);
             } catch (Exception ignored) {
             }

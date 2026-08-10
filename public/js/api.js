@@ -129,7 +129,8 @@ export const api = {
     request('/api/search', { params: { keyword, scope: 'history', max, view_at: viewAt }, timeoutMs: 15000 }),
 
   video: (bvid) => request('/api/video', { params: { bvid }, timeoutMs: 10000 }),
-  play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec }, timeoutMs: 10000 }),
+  play: (bvid, cid, qn = 80, codec = 'auto', noDash = false) =>
+    request('/api/play', { params: { bvid, cid, qn, codec, noDash: noDash ? 1 : '' }, timeoutMs: 10000 }),
   report: (body) => request('/api/play/report', { method: 'POST', body }),
 
   favFolders: (mid, opts = {}) =>
