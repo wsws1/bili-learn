@@ -1,6 +1,6 @@
 // 知学前端 API 客户端：只调本地 /api 代理
 async function request(path, options = {}) {
-  const { method = 'GET', params, body, timeoutMs = 6000 } = options;
+  const { method = 'GET', params, body, timeoutMs = 6000, retries = 1 } = options;
   let url = path;
   if (params) {
     const sp = new URLSearchParams();
@@ -15,25 +15,36 @@ async function request(path, options = {}) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetch(url, { ...init, signal: ctrl.signal });
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error(`请求超时（${timeoutMs}ms）：${path}`);
-    throw new Error('网络错误：' + e.message + '（' + path + '）');
-  } finally {
-    clearTimeout(timer);
+  // 网络失败自动重试（手机网络抖动时自动恢复，避免频繁手动重试）
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let res;
+    try {
+      res = await fetch(url, { ...init, signal: ctrl.signal });
+    } catch (e) {
+      lastErr = e.name === 'AbortError'
+        ? new Error(`请求超时（${timeoutMs}ms）：${path}`)
+        : new Error('网络错误：' + e.message + '（' + path + '）');
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1200));
+        continue;
+      }
+      throw lastErr;
+    } finally {
+      clearTimeout(timer);
+    }
+    let json;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`接口返回异常: HTTP ${res.status}`);
+    }
+    if (!res.ok && json && json.error) throw new Error(json.error);
+    return json;
   }
-  let json;
-  try {
-    json = await res.json();
-  } catch {
-    throw new Error(`接口返回异常: HTTP ${res.status}`);
-  }
-  if (!res.ok && json && json.error) throw new Error(json.error);
-  return json;
+  throw lastErr;
 }
 
 export const api = {
@@ -53,7 +64,7 @@ export const api = {
 
   favFolders: (mid) => request('/api/fav/folders', { params: { up_mid: mid } }),
   favList: (mediaId, pn = 1, keyword = '') => request('/api/fav/list', { params: { media_id: mediaId, pn, ps: 30, keyword } }),
-  favCheck: (bvid) => request('/api/fav/check', { params: { bvid }, timeoutMs: 15000 }),
+  favCheck: (bvid) => request('/api/fav/check', { params: { bvid }, timeoutMs: 15000, retries: 0 }),
   favDeal: (rid, addIds = '', delIds = '') =>
     request('/api/fav/deal', { method: 'POST', body: { rid, add_media_ids: addIds, del_media_ids: delIds } }),
 
@@ -61,7 +72,7 @@ export const api = {
   historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt } }),
 
   followings: (mid, all = false, tagid = '') =>
-    request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid }, timeoutMs: 30000 }),
+    request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid }, timeoutMs: 30000, retries: 0 }),
   relationTags: () => request('/api/relation/tags'),
   user: (mid) => request('/api/user', { params: { mid } }),
   dynamicsAll: (offset = '', time = '') => request('/api/dynamics/all', { params: { offset, time } }),
