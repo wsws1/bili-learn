@@ -159,7 +159,10 @@ $('lanForm').addEventListener('submit', async (e) => {
     out.className = 'check-result ' + (ok ? 'ok' : 'err');
     logDiag('外部地址检测: ' + (ok ? '可达' : '异常') + ' ' + url);
   } catch (err) {
-    out.textContent = '不可达：' + err.message + '。请确认是鸿蒙系统在 WiFi 下的真实 IP';
+    out.textContent =
+      '不可达：' + err.message +
+      '。若卓易通是独立网段（NAT），需在卓易通设置里开启「共享宿主机网络」或端口映射，' +
+      '或在容器内用 Tailscale 组网后访问虚拟 IP';
     out.className = 'check-result err';
     logDiag('外部地址不可达: ' + url + ' ' + err.message);
   }
