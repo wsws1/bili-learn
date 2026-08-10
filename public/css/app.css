@@ -156,6 +156,12 @@ body:has(#bottomnav.hidden) .view {
   height: 20px;
 }
 
+.icon-btn:disabled,
+.icon-btn.disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
 /* ---------- 底部导航 ---------- */
 .bottomnav {
   position: fixed;

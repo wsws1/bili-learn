@@ -74,6 +74,7 @@ export default function renderPlayer(container, ctx, route) {
         <video id="video" controls playsinline preload="auto"></video>
         <div id="vLoading" class="loading">${ui.icon('refresh', 18)}加载视频中…</div>
         <div id="vError" class="load-error hidden"></div>
+        <div id="vTapPlay" class="load-error hidden">点击播放</div>
       </div>
       <div class="player-ctrl">
         <select id="qualitySel" class="select hidden" aria-label="清晰度"></select>
@@ -111,6 +112,7 @@ export default function renderPlayer(container, ctx, route) {
   const video = container.querySelector('#video');
   const vLoading = container.querySelector('#vLoading');
   const vError = container.querySelector('#vError');
+  const vTapPlay = container.querySelector('#vTapPlay');
   const panel = container.querySelector('#panel');
   let currentTab = 'parts';
 
@@ -199,6 +201,7 @@ export default function renderPlayer(container, ctx, route) {
   async function loadPlay() {
     vLoading.classList.remove('hidden');
     vError.classList.add('hidden');
+    vTapPlay.classList.add('hidden');
     destroyPlayer();
     state.reportFailed = false;
     try {
@@ -224,11 +227,18 @@ export default function renderPlayer(container, ctx, route) {
         if (!state.pendingSeek) state.player.play();
       } else {
         video.src = r.streamUrl;
-        if (!state.pendingSeek) video.play().catch(() => {});
+        if (!state.pendingSeek) safePlay();
       }
       vLoading.classList.add('hidden');
       scheduleResumeSeek();
       startHeartbeat();
+      // 外部浏览器可能拦截自动播放：1.5s 后仍未播放且已就绪 → 提示点击播放
+      setTimeout(() => {
+        if (state.disposed) return;
+        if (video.paused && video.readyState >= 2) {
+          vTapPlay.classList.remove('hidden');
+        }
+      }, 1500);
     } catch (e) {
       vLoading.classList.add('hidden');
       showError(e.message, () => loadPlay());
@@ -303,7 +313,7 @@ export default function renderPlayer(container, ctx, route) {
         if (!state.pendingSeek) state.player.play();
       } else {
         video.src = r.streamUrl;
-        if (!state.pendingSeek) video.play().catch(() => {});
+        if (!state.pendingSeek) safePlay();
       }
       vLoading.classList.add('hidden');
     } catch (e) {
@@ -465,7 +475,7 @@ export default function renderPlayer(container, ctx, route) {
       if (state.disposed || state.seekApplied) return;
       state.seekApplied = true;
       ui.toast('已续播到 ' + ui.fmtDur(t));
-      if (video.paused) video.play().catch(() => {});
+      if (video.paused) safePlay();
     };
     const onSeeked = () => {
       video.removeEventListener('seeked', onSeeked);
@@ -484,7 +494,7 @@ export default function renderPlayer(container, ctx, route) {
       } catch {}
     }
     // 立即播放，让 dash 从 seek 位置缓冲
-    if (video.paused) video.play().catch(() => {});
+    if (video.paused) safePlay();
     // 兜底：2.5 秒内未触发 seeked 也标记完成
     setTimeout(doPlay, 2500);
   }
@@ -505,6 +515,32 @@ export default function renderPlayer(container, ctx, route) {
     typeof document.pictureInPictureEnabled === 'boolean' &&
     document.pictureInPictureEnabled &&
     typeof video.requestPictureInPicture === 'function';
+
+  // 自动播放被浏览器拦截时（外部浏览器常见），显示“点击播放”让用户手动开始
+  function safePlay() {
+    const p = video.play();
+    if (p && p.catch) {
+      p.catch((e) => {
+        if (e && e.name === 'NotAllowedError') {
+          vTapPlay.classList.remove('hidden');
+        }
+      });
+    }
+  }
+  vTapPlay.addEventListener('click', () => {
+    vTapPlay.classList.add('hidden');
+    safePlay();
+  });
+  video.addEventListener('playing', () => vTapPlay.classList.add('hidden'));
+
+  // 小窗按钮：未播放时置灰禁用
+  function updatePipBtn() {
+    pipBtn.disabled = video.paused;
+    pipBtn.classList.toggle('disabled', video.paused);
+  }
+  updatePipBtn();
+  video.addEventListener('play', updatePipBtn);
+  video.addEventListener('pause', updatePipBtn);
 
   function startFloatPip() {
     if (pipSession && pipSession.mode === 'float') return true;
@@ -881,10 +917,6 @@ export default function renderPlayer(container, ctx, route) {
     if (pipSession && pipSession.mode === 'float') {
       console.log('[zhixue-web] 悬浮小窗（后台续播）: ' + state.bvid);
       return;
-    }
-    // 移动端播放中离开页面：自动进悬浮小窗（类似系统自动画中画）
-    if (!pipSupported && !video.paused && video.currentTime > 0 && !video.ended) {
-      if (startFloatPip()) return;
     }
     const inPip = document.pictureInPictureElement === video && !video.paused;
     if (inPip) {
