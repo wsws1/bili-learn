@@ -60,7 +60,10 @@ export default function renderHome(container, ctx) {
 
   // 继续学习：取历史中第一条未看完（受沉浸模式过滤）
   function loadResume() {
+  resumeBox.innerHTML = '';
+  resumeBox.appendChild(ui.loadBox('加载中…'));
   api.history(10).then((r) => {
+    resumeBox.innerHTML = '';
     if (r.code !== 0) throw new Error(r.message || '历史记录获取失败');
     const list = (r.data?.list || []).map((h) => ({
       bvid: h.history?.bvid || h.bvid,
@@ -98,6 +101,7 @@ export default function renderHome(container, ctx) {
     });
     resumeBox.appendChild(card);
   }).catch((e) => {
+    resumeBox.innerHTML = '';
     resumeBox.appendChild(ui.errorBox('继续学习加载失败：' + e.message, loadResume));
   });
   }
@@ -105,7 +109,10 @@ export default function renderHome(container, ctx) {
 
   // 关注更新预览（受沉浸模式关键词过滤）
   function loadDyn() {
+  dynBox.innerHTML = '';
+  dynBox.appendChild(ui.loadBox('加载中…'));
   api.dynamicsAll().then((r) => {
+    dynBox.innerHTML = '';
     if (!r.ok) throw new Error(r.message || '动态获取失败');
     const all = r.items.filter(ui.passImmersion);
     const unseen = all.filter((d) => ui.isUnseenDyn(d));
@@ -123,6 +130,7 @@ export default function renderHome(container, ctx) {
       dynBox.appendChild(ui.feedItem(d, { thumb: true, onClick: () => go('player', { bvid: d.bvid }) }));
     });
   }).catch((e) => {
+    dynBox.innerHTML = '';
     dynBox.appendChild(ui.errorBox('动态加载失败：' + e.message, loadDyn));
   });
   }
@@ -162,7 +170,10 @@ export default function renderHome(container, ctx) {
 
   let favData = [];
   function loadFavs() {
+  favBox.innerHTML = '';
+  favBox.appendChild(ui.loadBox('加载中…'));
   api.favFolders(user?.mid).then((r) => {
+    favBox.innerHTML = '';
     if (r.code !== 0) throw new Error(r.message || '收藏夹获取失败');
     const list = r.data?.list || [];
     const count = container.querySelector('#favCount');
@@ -170,6 +181,7 @@ export default function renderHome(container, ctx) {
     favData = list;
     renderFav();
   }).catch((e) => {
+    favBox.innerHTML = '';
     favBox.appendChild(ui.errorBox('收藏夹加载失败：' + e.message, loadFavs));
   });
   }
