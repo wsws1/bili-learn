@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.util.Log;
 
 /**
  * 开机广播：声明后系统能识别本应用需要自启动（在有自启动管理的 ROM 上会出现开关），
@@ -16,11 +17,17 @@ public class BootReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || "android.intent.action.QUICKBOOT_POWERON".equals(action)) {
-            Intent service = new Intent(context, KeepAliveService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(service);
-            } else {
-                context.startService(service);
+            try {
+                Intent service = new Intent(context, KeepAliveService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(service);
+                } else {
+                    context.startService(service);
+                }
+            } catch (Exception e) {
+                // 部分 ROM/机型（含 Android 15 对某些 FGS 类型的限制）可能拦截启动，
+                // 不能让广播崩溃，下次打开 App 时 MainActivity 会兜底再拉起服务。
+                Log.e("zhixue", "boot start keepalive failed: " + e, e);
             }
         }
     }

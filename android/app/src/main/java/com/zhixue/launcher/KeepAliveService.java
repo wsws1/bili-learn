@@ -51,7 +51,7 @@ public class KeepAliveService extends Service {
                     .setContentIntent(pi)
                     .build();
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             } else {
                 startForeground(NOTIF_ID, notification);
             }
