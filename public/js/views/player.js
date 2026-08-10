@@ -550,6 +550,19 @@ export default function renderPlayer(container, ctx, route) {
     state.dashPlayed = true;
     vTapPlay.classList.add('hidden');
   });
+  // 通知原生 WebView 视频宽高比，全屏时据此选择横屏/竖屏（竖版视频不能强制横屏）
+  function syncVideoRatio() {
+    if (window.AndroidPip && typeof window.AndroidPip.setVideoRatio === 'function') {
+      const w = video.videoWidth || 0;
+      const h = video.videoHeight || 0;
+      if (w > 0 && h > 0) {
+        try {
+          window.AndroidPip.setVideoRatio(w, h);
+        } catch {}
+      }
+    }
+  }
+  video.addEventListener('loadedmetadata', syncVideoRatio);
 
   // 小窗按钮：未播放时置灰禁用
   function updatePipBtn() {
@@ -606,6 +619,7 @@ export default function renderPlayer(container, ctx, route) {
         ui.toast('请先播放再开启小窗');
         return;
       }
+      syncVideoRatio();
       const doEnter = () => {
         try {
           window.AndroidPip.enter();

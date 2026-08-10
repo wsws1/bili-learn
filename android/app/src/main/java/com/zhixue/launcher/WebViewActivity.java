@@ -32,6 +32,8 @@ public class WebViewActivity extends Activity {
     private WebChromeClient chromeClient;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
+    private boolean ratioKnown = false;
+    private boolean portraitVideo = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,7 +86,14 @@ public class WebViewActivity extends Activity {
                         FrameLayout.LayoutParams.MATCH_PARENT));
                 bar.setVisibility(View.GONE);
                 web.setVisibility(View.INVISIBLE);
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                // 按视频宽高比选择横屏/竖屏全屏：竖版视频强制横屏会导致全屏被取消
+                if (ratioKnown) {
+                    setRequestedOrientation(portraitVideo
+                            ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                } else {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                }
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             }
 
@@ -113,14 +122,25 @@ public class WebViewActivity extends Activity {
                 runOnUiThread(() -> {
                     try {
                         if (Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode()) {
+                            Rational ratio = ratioKnown
+                                    ? (portraitVideo ? new Rational(9, 16) : new Rational(16, 9))
+                                    : new Rational(16, 9);
                             PictureInPictureParams params = new PictureInPictureParams.Builder()
-                                    .setAspectRatio(new Rational(16, 9))
+                                    .setAspectRatio(ratio)
                                     .build();
                             enterPictureInPictureMode(params);
                         }
                     } catch (Exception ignored) {
                     }
                 });
+            }
+
+            @JavascriptInterface
+            public void setVideoRatio(int width, int height) {
+                if (width > 0 && height > 0) {
+                    ratioKnown = true;
+                    portraitVideo = height > width;
+                }
             }
         }, "AndroidPip");
 
