@@ -138,7 +138,9 @@ async function route() {
   const c = ctx();
   setNavActive(r.name);
 
-  if (!state.user || state.user.ok === undefined) {
+  if (state.user === null) {
+    viewEl.innerHTML = '';
+    viewEl.appendChild(ui.loadBox('正在检查登录状态…'));
     await refreshUser();
     c.user = state.user;
   }

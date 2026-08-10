@@ -729,7 +729,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       if (req.headers.range) h.Range = req.headers.range;
       let up;
       try {
-        up = await fetch(streamUrl, { headers: h, redirect: "follow", signal: AbortSignal.timeout(6e3) });
+        up = await fetch(streamUrl, { headers: h, redirect: "follow", signal: AbortSignal.timeout(1e4) });
       } catch (e) {
         return sendJson(res, 502, { ok: false, error: "\u6D41\u4EE3\u7406\u8BF7\u6C42\u5931\u8D25\uFF1A" + (e.name === "TimeoutError" ? "\u4E0A\u6E38\u8D85\u65F6" : e.message) });
       }
@@ -892,6 +892,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const bvid = q.get("bvid") || "";
       const cid = q.get("cid") || "";
       const codec = q.get("codec") || "auto";
+      const height = parseInt(q.get("height"), 10) || 0;
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: "\u7F3A\u5C11 bvid/cid \u53C2\u6570" });
       const r2 = await biliFetch("/x/player/wbi/playurl", {
         params: { bvid, cid, fnval: 4048, fourk: 1, qn: Number(q.get("qn")) || 80 },
@@ -904,6 +905,13 @@ var server = import_node_http.default.createServer(async (req, res) => {
       if (codec !== "auto") {
         const filtered = videos.filter((v) => codecFamily(v.codecs) === codec);
         if (filtered.length) videos = filtered;
+      }
+      if (height > 0 && videos.length) {
+        const under = videos.filter((v) => v.height && v.height <= height);
+        if (under.length) {
+          const best = Math.max(...under.map((v) => v.height));
+          videos = under.filter((v) => v.height === best);
+        }
       }
       applyCors(res);
       res.writeHead(200, { "Content-Type": "application/dash+xml; charset=utf-8", "Cache-Control": "private, max-age=300" });
@@ -1203,6 +1211,8 @@ var server = import_node_http.default.createServer(async (req, res) => {
     }
   }
 });
+server.requestTimeout = 6e4;
+server.keepAliveTimeout = 5e3;
 server.listen(PORT, currentHost, () => {
   console.log(`\u77E5\u5B66 started: http://localhost:${PORT}`);
   for (const ip of lanIPs()) console.log(`\u5C40\u57DF\u7F51\u8BBF\u95EE\uFF08\u540C\u4E00 WiFi\uFF09: http://${ip}:${PORT}`);

@@ -47,8 +47,8 @@ export const api = {
   searchHistory: (keyword, max = '', viewAt = '') =>
     request('/api/search', { params: { keyword, scope: 'history', max, view_at: viewAt } }),
 
-  video: (bvid) => request('/api/video', { params: { bvid } }),
-  play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec } }),
+  video: (bvid) => request('/api/video', { params: { bvid }, timeoutMs: 10000 }),
+  play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec }, timeoutMs: 10000 }),
   report: (body) => request('/api/play/report', { method: 'POST', body }),
 
   favFolders: (mid) => request('/api/fav/folders', { params: { up_mid: mid } }),

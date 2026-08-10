@@ -747,7 +747,7 @@ const server = http.createServer(async (req, res) => {
       if (req.headers.range) h.Range = req.headers.range;
       let up;
       try {
-        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(6000) });
+        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(10000) });
       } catch (e) {
         return sendJson(res, 502, { ok: false, error: '流代理请求失败：' + (e.name === 'TimeoutError' ? '上游超时' : e.message) });
       }
@@ -910,6 +910,7 @@ const server = http.createServer(async (req, res) => {
       const bvid = q.get('bvid') || '';
       const cid = q.get('cid') || '';
       const codec = q.get('codec') || 'auto';
+      const height = parseInt(q.get('height'), 10) || 0;
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: '缺少 bvid/cid 参数' });
       const r2 = await biliFetch('/x/player/wbi/playurl', {
         params: { bvid, cid, fnval: 4048, fourk: 1, qn: Number(q.get('qn')) || 80 },
@@ -922,6 +923,13 @@ const server = http.createServer(async (req, res) => {
       if (codec !== 'auto') {
         const filtered = videos.filter((v) => codecFamily(v.codecs) === codec);
         if (filtered.length) videos = filtered;
+      }
+      if (height > 0 && videos.length) {
+        const under = videos.filter((v) => v.height && v.height <= height);
+        if (under.length) {
+          const best = Math.max(...under.map((v) => v.height));
+          videos = under.filter((v) => v.height === best);
+        }
       }
       applyCors(res);
       res.writeHead(200, { 'Content-Type': 'application/dash+xml; charset=utf-8', 'Cache-Control': 'private, max-age=300' });
@@ -1233,6 +1241,9 @@ const server = http.createServer(async (req, res) => {
     }
   }
 });
+
+server.requestTimeout = 60000;
+server.keepAliveTimeout = 5000;
 
 server.listen(PORT, currentHost, () => {
   console.log(`知学 started: http://localhost:${PORT}`);

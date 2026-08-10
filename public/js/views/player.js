@@ -9,6 +9,9 @@ function loadScript(src) {
   });
 }
 
+const QN_TO_HEIGHT = { 16:360, 32:480, 64:720, 74:720, 80:1080, 112:1080, 116:1080, 120:2160, 125:1080, 126:1080, 127:4320 };
+const HEIGHT_LABEL = { 360: '360P', 480: '480P', 720: '720P', 1080: '1080P', 2160: '4K', 4320: '8K' };
+
 // 小窗（画中画）会话：离开播放页后视频继续播放，关闭小窗回到原页面
 let pipSession = null;
 
@@ -56,6 +59,7 @@ export default function renderPlayer(container, ctx, route) {
     seekApplied: false,
     noteKey: 'zhixue:note:' + bvid0,
     doneKey: 'zhixue:done:' + bvid0,
+    qualityHeight: Number(localStorage.getItem('zhixue:quality')) || 0,
   };
 
   container.innerHTML = `
@@ -66,6 +70,7 @@ export default function renderPlayer(container, ctx, route) {
         <div id="vError" class="load-error hidden"></div>
       </div>
       <div class="player-ctrl">
+        <select id="qualitySel" class="select hidden" aria-label="清晰度"></select>
         <select id="speedSel" class="select" aria-label="播放速度">
           <option value="0.5">0.5×</option>
           <option value="0.75">0.75×</option>
@@ -192,6 +197,7 @@ export default function renderPlayer(container, ctx, route) {
       const r = await api.play(state.bvid, state.cid);
       if (!r.ok) throw new Error(r.error || '播放流获取失败');
       state.play = r;
+      renderQuality(r.acceptQuality || []);
       state.startTs = Math.round(Date.now() / 1000);
       state.playedSec = 0;
       state.lastT = 0;
@@ -199,7 +205,7 @@ export default function renderPlayer(container, ctx, route) {
         await loadScript('/vendor/dash.all.min.js');
         if (!window.dashjs) throw new Error('DASH 播放器不可用');
         state.player = window.dashjs.MediaPlayer().create();
-        state.player.initialize(video, r.mpdUrl, true);
+        state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, true);
         renderCodecs(r.codecs, r.codec);
       } else if (r.type === 'flv') {
         await loadScript('/vendor/mpegts.js');
@@ -240,6 +246,63 @@ export default function renderPlayer(container, ctx, route) {
     });
   }
 
+  // 清晰度：默认 720P，上限取视频支持的最高档（本地记忆）
+  function renderQuality(acceptQuality) {
+    const sel = container.querySelector('#qualitySel');
+    const heights = [...new Set((acceptQuality || []).map((q) => QN_TO_HEIGHT[q]).filter(Boolean))].sort((a, b) => a - b);
+    if (!heights.length) {
+      sel.classList.add('hidden');
+      return;
+    }
+    let pick = state.qualityHeight;
+    if (!heights.includes(pick)) {
+      pick = heights.includes(720) ? 720 : heights[heights.length - 1];
+      state.qualityHeight = pick;
+      localStorage.setItem('zhixue:quality', String(pick));
+    }
+    sel.classList.remove('hidden');
+    sel.innerHTML = heights.map((h) => `<option value="${h}">${HEIGHT_LABEL[h] || h + 'P'}</option>`).join('');
+    sel.value = String(pick);
+  }
+
+  async function loadPlayWithHeight() {
+    const h = state.qualityHeight;
+    const cur = state.play;
+    if (!cur) return;
+    localStorage.setItem('zhixue:quality', String(h));
+    vLoading.classList.remove('hidden');
+    vError.classList.add('hidden');
+    destroyPlayer();
+    try {
+      const qn = Number(Object.keys(QN_TO_HEIGHT).find((k) => QN_TO_HEIGHT[k] === h)) || 64;
+      const r = await api.play(state.bvid, state.cid, qn, cur.codec || 'auto');
+      if (!r.ok) throw new Error(r.error || '播放流获取失败');
+      state.play = r;
+      state.startTs = Math.round(Date.now() / 1000);
+      state.playedSec = 0;
+      state.lastT = 0;
+      if (r.type === 'dash') {
+        await loadScript('/vendor/dash.all.min.js');
+        state.player = window.dashjs.MediaPlayer().create();
+        state.player.initialize(video, r.mpdUrl + '&height=' + h, true);
+        renderCodecs(r.codecs, r.codec);
+      } else if (r.type === 'flv') {
+        await loadScript('/vendor/mpegts.js');
+        state.player = window.mpegts.createPlayer({ type: 'flv', url: r.streamUrl, isLive: false });
+        state.player.attachMediaElement(video);
+        state.player.load();
+        state.player.play();
+      } else {
+        video.src = r.streamUrl;
+        video.play().catch(() => {});
+      }
+      vLoading.classList.add('hidden');
+    } catch (e) {
+      vLoading.classList.add('hidden');
+      showError(e.message);
+    }
+  }
+
   async function loadPlayWithCodec(codec) {
     vLoading.classList.remove('hidden');
     try {
@@ -251,7 +314,7 @@ export default function renderPlayer(container, ctx, route) {
       state.lastT = 0;
       await loadScript('/vendor/dash.all.min.js');
       state.player = window.dashjs.MediaPlayer().create();
-      state.player.initialize(video, r.mpdUrl, true);
+      state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, true);
       renderCodecs(r.codecs, r.codec);
       vLoading.classList.add('hidden');
     } catch (e) {
@@ -376,6 +439,10 @@ export default function renderPlayer(container, ctx, route) {
   // ---------- 播放速度 / 画中画 ----------
   container.querySelector('#speedSel').addEventListener('change', (e) => {
     video.playbackRate = Number(e.target.value);
+  });
+  container.querySelector('#qualitySel').addEventListener('change', (e) => {
+    state.qualityHeight = Number(e.target.value);
+    loadPlayWithHeight();
   });
   container.querySelector('#pipBtn').addEventListener('click', async () => {
     try {

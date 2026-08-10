@@ -51,12 +51,12 @@ function renderStatus(s) {
 }
 
 function renderLan(s) {
-  const ips = (s && s.lanIPs) || [];
+  const urls = (s && s.lanIPs) || [];
   const lanOn = !!(s && s.lan);
   $('lanToggle').checked = lanOn;
   const list = $('lanList');
-  if (lanOn && ips.length) {
-    list.innerHTML = ips.map((ip) => `<li>${ip}:${s.port || 3210}</li>`).join('');
+  if (lanOn && urls.length) {
+    list.innerHTML = urls.map((u) => `<li>${u}</li>`).join('');
     list.hidden = false;
   } else {
     list.hidden = true;
