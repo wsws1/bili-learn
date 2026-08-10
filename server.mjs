@@ -647,11 +647,15 @@ async function getAllFollowings(vmid, tagid = '') {
   for (let page = 1; page <= 20; page++) {
     const r = await biliFetch('/x/relation/followings', { params: { vmid, pn: page, ps: 50, order: 'desc', ...(tagid ? { tagid } : {}) } });
     const d = r.json?.data;
-    if (r.json?.code !== 0 || !d) break;
+    if (r.json?.code !== 0 || !d) {
+      console.log('[zhixue-node] followings 拉取中断: page=' + page + ' code=' + r.json?.code + ' msg=' + (r.json?.message || '') + ' 已获取=' + out.length + '/' + total);
+      break;
+    }
     total = d.total || total;
     out.push(...(d.list || []).map(normUP));
     if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
   }
+  console.log('[zhixue-node] followings 完成: total=' + total + ' 实际=' + out.length + ' tagid=' + (tagid || 'all'));
   const data = { list: out, total, pages: Math.ceil(out.length / 50) };
   followCache = { key, data, at: Date.now() };
   return data;

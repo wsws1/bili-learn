@@ -61,7 +61,7 @@ export const api = {
   historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt } }),
 
   followings: (mid, all = false, tagid = '') =>
-    request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid } }),
+    request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid }, timeoutMs: 30000 }),
   relationTags: () => request('/api/relation/tags'),
   user: (mid) => request('/api/user', { params: { mid } }),
   dynamicsAll: (offset = '', time = '') => request('/api/dynamics/all', { params: { offset, time } }),

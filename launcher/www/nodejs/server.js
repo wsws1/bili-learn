@@ -642,11 +642,15 @@ async function getAllFollowings(vmid, tagid = "") {
   for (let page = 1; page <= 20; page++) {
     const r = await biliFetch("/x/relation/followings", { params: { vmid, pn: page, ps: 50, order: "desc", ...tagid ? { tagid } : {} } });
     const d = r.json?.data;
-    if (r.json?.code !== 0 || !d) break;
+    if (r.json?.code !== 0 || !d) {
+      console.log("[zhixue-node] followings \u62C9\u53D6\u4E2D\u65AD: page=" + page + " code=" + r.json?.code + " msg=" + (r.json?.message || "") + " \u5DF2\u83B7\u53D6=" + out.length + "/" + total);
+      break;
+    }
     total = d.total || total;
     out.push(...(d.list || []).map(normUP));
     if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
   }
+  console.log("[zhixue-node] followings \u5B8C\u6210: total=" + total + " \u5B9E\u9645=" + out.length + " tagid=" + (tagid || "all"));
   const data = { list: out, total, pages: Math.ceil(out.length / 50) };
   followCache = { key, data, at: Date.now() };
   return data;
