@@ -42,6 +42,7 @@ function renderStatus(s) {
     $('statusText').textContent = '本地服务运行正常，打开网页版后完成登录即可使用。';
     $('portText').textContent = s.port;
     $('nodeText').textContent = s.node;
+    $('biliText').textContent = s.biliOk === false ? '异常（快速失败中）' : '可达';
     $('openBtn').disabled = false;
     renderLan(s);
   } else {

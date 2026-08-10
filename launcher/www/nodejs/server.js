@@ -53,8 +53,6 @@ var PORT = Number(process.env.PORT || 3210);
 var currentHost = process.env.BF_HOST || process.env.HOST || "0.0.0.0";
 var logBuffer = [];
 var MAX_LOGS = 300;
-var __origLog = console.log;
-var __origErr = console.error;
 function __pushLog(level, args) {
   let text;
   try {
@@ -67,16 +65,24 @@ function __pushLog(level, args) {
 }
 console.log = (...args) => {
   __pushLog("log", args);
-  __origLog(...args);
+  try {
+    process.stdout.write(args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ") + "\n");
+  } catch {
+  }
 };
 console.error = (...args) => {
   __pushLog("err", args);
-  __origErr(...args);
+  try {
+    process.stderr.write(args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ") + "\n");
+  } catch {
+  }
 };
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 var BILI_API = "https://api.bilibili.com";
 var BILI_PASSPORT = "https://passport.bilibili.com";
 var REFERER = "https://www.bilibili.com/";
+var biliDownAt = 0;
+var BILI_DOWN_WINDOW = 8e3;
 var MIXIN_KEY_ENC_TAB = [
   46,
   47,
@@ -232,6 +238,13 @@ async function ensureBuvid() {
 }
 async function biliFetch(path, { params = {}, wbi = false, method = "GET", form = null, base = BILI_API, retried = false } = {}) {
   await ensureBuvid();
+  if (biliDownAt && Date.now() - biliDownAt < BILI_DOWN_WINDOW) {
+    return {
+      json: { code: "NETWORK", message: "B \u7AD9\u8FDE\u63A5\u5F02\u5E38\uFF08\u521A\u5931\u8D25\u8FC7\uFF09\uFF0C\u5DF2\u5FEB\u901F\u8FD4\u56DE" },
+      text: "",
+      meta: { endpoint: path, status: 0, wbi, timeMs: 0, url: "" }
+    };
+  }
   let url;
   const init = { method, headers: baseHeaders() };
   if (form) {
@@ -252,6 +265,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = "GET", form 
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(6e3) });
   } catch (e) {
+    biliDownAt = Date.now();
     return {
       json: { code: "NETWORK", message: "\u65E0\u6CD5\u8FDE\u63A5 B \u7AD9 API\uFF1A" + netDetail(e) + "\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u4EE3\u7406\u540E\u91CD\u8BD5\u3002" },
       text: "",
@@ -829,6 +843,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
         port: PORT,
         host: currentHost,
         lan: currentHost !== "127.0.0.1",
+        biliOk: !(biliDownAt && Date.now() - biliDownAt < BILI_DOWN_WINDOW),
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`)
       });
     }

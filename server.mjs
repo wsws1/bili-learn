@@ -48,11 +48,15 @@ function __pushLog(level, args) {
 }
 console.log = (...args) => {
   __pushLog('log', args);
-  __origLog(...args);
+  try {
+    process.stdout.write(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
+  } catch {}
 };
 console.error = (...args) => {
   __pushLog('err', args);
-  __origErr(...args);
+  try {
+    process.stderr.write(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
+  } catch {}
 };
 
 const UA =
@@ -60,6 +64,9 @@ const UA =
 const BILI_API = 'https://api.bilibili.com';
 const BILI_PASSPORT = 'https://passport.bilibili.com';
 const REFERER = 'https://www.bilibili.com/';
+// B 站连接熔断：失败后 8 秒内快速失败，避免全线干等超时
+let biliDownAt = 0;
+const BILI_DOWN_WINDOW = 8000;
 
 // WBI 签名重排表（来自 bilibili-API-collect 文档）
 const MIXIN_KEY_ENC_TAB = [
@@ -176,6 +183,14 @@ async function ensureBuvid() {
 
 async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form = null, base = BILI_API, retried = false } = {}) {
   await ensureBuvid();
+  // B 站刚失败过：快速失败，避免每个请求都干等超时（8 秒后自动重试）
+  if (biliDownAt && Date.now() - biliDownAt < BILI_DOWN_WINDOW) {
+    return {
+      json: { code: 'NETWORK', message: 'B 站连接异常（刚失败过），已快速返回' },
+      text: '',
+      meta: { endpoint: path, status: 0, wbi, timeMs: 0, url: '' },
+    };
+  }
   let url;
   const init = { method, headers: baseHeaders() };
   if (form) {
@@ -197,6 +212,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(6000) });
   } catch (e) {
+    biliDownAt = Date.now();
     return {
       json: { code: 'NETWORK', message: '无法连接 B 站 API：' + netDetail(e) + '。请检查网络或代理后重试。' },
       text: '',
@@ -845,6 +861,7 @@ const server = http.createServer(async (req, res) => {
         port: PORT,
         host: currentHost,
         lan: currentHost !== '127.0.0.1',
+        biliOk: !(biliDownAt && Date.now() - biliDownAt < BILI_DOWN_WINDOW),
         lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`),
       });
     }
