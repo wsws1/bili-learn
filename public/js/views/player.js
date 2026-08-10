@@ -339,10 +339,15 @@ export default function renderPlayer(container, ctx, route) {
         else if (state.play?.type === 'flv' && state.player.destroy) state.player.destroy();
       } catch {}
       state.player = null;
+      }
+      // 彻底静音：暂停 + 清空 src + 卸载，避免标签页残留小喇叭
+      try {
+        video.pause();
+        video.src = '';
+        video.removeAttribute('src');
+        video.load();
+      } catch {}
     }
-    video.removeAttribute('src');
-    video.load();
-  }
 
   function showError(msg, retry) {
       vError.innerHTML = `${ui.esc(msg)}<br>` + (retry ? '<button class="btn" style="margin-top:10px">重试</button>' : '');
@@ -818,8 +823,9 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   return () => {
-    const inPip = document.pictureInPictureElement === video;
+    const inPip = document.pictureInPictureElement === video && !video.paused;
     if (inPip) {
+      console.log('[zhixue-web] 小窗转移（后台续播）: ' + state.bvid);
       // 小窗播放中：把视频移到离屏容器继续播放，心跳继续上报
       pipSession = { state, video, player: state.player, playType: state.play?.type, hbTimer: state.hbTimer, report };
       // 小窗暂停时停掉心跳，恢复播放再继续上报
@@ -845,6 +851,9 @@ export default function renderPlayer(container, ctx, route) {
       video.addEventListener('leavepictureinpicture', onPipLeave, { once: true });
       window.addEventListener('visibilitychange', onPipVisible);
       return;
+    }
+    if (document.pictureInPictureElement === video) {
+      console.log('[zhixue-web] 小窗已暂停，离开即停止');
     }
     state.disposed = true;
     try {
