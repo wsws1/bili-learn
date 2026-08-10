@@ -805,15 +805,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(up.status, outHeaders);
       // 空闲看门狗：传输中超过 10 秒无数据视为卡死，断开上游与客户端，
       // 避免占满浏览器连接导致其他页面全部超时
+      // 空闲看门狗：只销毁响应让循环结束，绝不在流被消费期间 cancel（会抛 ERR_INVALID_STATE）
       let lastChunk = Date.now();
       const guard = setInterval(() => {
         if (Date.now() - lastChunk > 10000) {
-          try { up.body?.cancel(); } catch {}
-          try { res.destroy(); } catch {}
+          try {
+            res.destroy();
+          } catch {}
         }
       }, 5000);
       res.on('close', () => {
-        try { up.body?.cancel(); } catch {}
+        try {
+          res.destroy();
+        } catch {}
       });
       try {
         for await (const chunk of up.body) {
@@ -834,6 +838,10 @@ const server = http.createServer(async (req, res) => {
         }
       } finally {
         clearInterval(guard);
+        // 循环已结束、流已解锁，此时取消上游是安全的
+        try {
+          if (up.body && typeof up.body.cancel === 'function') up.body.cancel();
+        } catch {}
       }
       return;
     }
@@ -1301,6 +1309,14 @@ const server = http.createServer(async (req, res) => {
 
 server.requestTimeout = 60000;
 server.keepAliveTimeout = 5000;
+
+// 全局兜底：任何意外异常只记录日志，绝不让进程退出（本地个人服务）
+process.on('uncaughtException', (e) => {
+  console.error('[zhixue-node] uncaughtException:', e && e.stack ? e.stack : e);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('[zhixue-node] unhandledRejection:', e && e.stack ? e.stack : e);
+});
 
 server.listen(PORT, currentHost, () => {
   console.log(`知学 started: http://localhost:${PORT}`);

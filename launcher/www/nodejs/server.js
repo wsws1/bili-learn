@@ -785,10 +785,6 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const guard = setInterval(() => {
         if (Date.now() - lastChunk > 1e4) {
           try {
-            up.body?.cancel();
-          } catch {
-          }
-          try {
             res.destroy();
           } catch {
           }
@@ -796,7 +792,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       }, 5e3);
       res.on("close", () => {
         try {
-          up.body?.cancel();
+          res.destroy();
         } catch {
         }
       });
@@ -821,6 +817,10 @@ var server = import_node_http.default.createServer(async (req, res) => {
         }
       } finally {
         clearInterval(guard);
+        try {
+          if (up.body && typeof up.body.cancel === "function") up.body.cancel();
+        } catch {
+        }
       }
       return;
     }
@@ -1273,6 +1273,12 @@ var server = import_node_http.default.createServer(async (req, res) => {
 });
 server.requestTimeout = 6e4;
 server.keepAliveTimeout = 5e3;
+process.on("uncaughtException", (e) => {
+  console.error("[zhixue-node] uncaughtException:", e && e.stack ? e.stack : e);
+});
+process.on("unhandledRejection", (e) => {
+  console.error("[zhixue-node] unhandledRejection:", e && e.stack ? e.stack : e);
+});
 server.listen(PORT, currentHost, () => {
   console.log(`\u77E5\u5B66 started: http://localhost:${PORT}`);
   for (const ip of lanIPs()) console.log(`\u5C40\u57DF\u7F51\u8BBF\u95EE\uFF08\u540C\u4E00 WiFi\uFF09: http://${ip}:${PORT}`);
