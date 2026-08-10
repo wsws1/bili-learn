@@ -1,5 +1,5 @@
 // 知学：入口 + 路由 + 全局壳
-import { api, abortAll } from './api.js';
+import { api, abortStale } from './api.js';
 import * as ui from './ui.js';
 import renderLogin from './views/login.js';
 import renderHome from './views/home.js';
@@ -22,6 +22,9 @@ export const state = {
   route: null,
   statusOk: false,
 };
+
+// 版本号：升级后更新，方便在「我的」页面确认手机运行的是哪个构建
+export const APP_VERSION = '2026.08.11.1';
 
 const NAV = [
   { route: 'home', label: '首页', icon: 'home' },
@@ -103,6 +106,7 @@ function ctx() {
   return {
     api,
     ui,
+    version: APP_VERSION,
     user: state.user,
     go,
     setTopbar,
@@ -136,8 +140,8 @@ async function route() {
     } catch {}
     cleanup = null;
   }
-  // 离开页面立即取消该页所有未完成请求，释放浏览器连接，避免连锁阻塞
-  abortAll();
+  // 离开页面只取消长时间未完成的慢请求（>2s），快速请求让其自然完成，避免连接池抖动占满
+  abortStale();
   const r = parseRoute();
   state.route = r;
   const c = ctx();

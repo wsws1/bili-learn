@@ -16,6 +16,12 @@ window.bridgeSend = (eventName, value) => {
 // 打开系统浏览器
 window.openWeb = (url) => {
   if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.open === 'function') {
+        window.ExternalBrowser.open(url);
+        return Promise.resolve();
+      }
+    } catch {}
     return Browser.open({ url });
   }
   window.open(url, '_blank');

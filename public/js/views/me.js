@@ -42,6 +42,7 @@ export default function renderMe(container, ctx) {
     </div>
 
     <button id="logoutBtn" class="btn btn-block" style="margin-top:14px;color:var(--danger);border-color:var(--border)">退出登录</button>
+    <div class="me-desc" style="text-align:center;color:var(--muted);margin-top:16px">版本 ${ctx.version}</div>
   `;
 
   const upList = container.querySelector('#upList');
