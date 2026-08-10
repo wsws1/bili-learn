@@ -59,6 +59,7 @@ export default function renderHome(container, ctx) {
   const favBox = container.querySelector('#favBox');
 
   // 继续学习：取历史中第一条未看完（受沉浸模式过滤）
+  function loadResume() {
   api.history(10).then((r) => {
     if (r.code !== 0) throw new Error(r.message || '历史记录获取失败');
     const list = (r.data?.list || []).map((h) => ({
@@ -97,10 +98,13 @@ export default function renderHome(container, ctx) {
     });
     resumeBox.appendChild(card);
   }).catch((e) => {
-    resumeBox.appendChild(ui.errorBox('继续学习加载失败：' + e.message));
+    resumeBox.appendChild(ui.errorBox('继续学习加载失败：' + e.message, loadResume));
   });
+  }
+  loadResume();
 
   // 关注更新预览（受沉浸模式关键词过滤）
+  function loadDyn() {
   api.dynamicsAll().then((r) => {
     if (!r.ok) throw new Error(r.message || '动态获取失败');
     const all = r.items.filter(ui.passImmersion);
@@ -119,8 +123,10 @@ export default function renderHome(container, ctx) {
       dynBox.appendChild(ui.feedItem(d, { thumb: true, onClick: () => go('player', { bvid: d.bvid }) }));
     });
   }).catch((e) => {
-    dynBox.appendChild(ui.errorBox('动态加载失败：' + e.message));
+    dynBox.appendChild(ui.errorBox('动态加载失败：' + e.message, loadDyn));
   });
+  }
+  loadDyn();
 
   // 收藏夹预览：常用收藏夹优先，其次最近播放，最多 2 个
   function renderFav() {
@@ -155,6 +161,7 @@ export default function renderHome(container, ctx) {
   }
 
   let favData = [];
+  function loadFavs() {
   api.favFolders(user?.mid).then((r) => {
     if (r.code !== 0) throw new Error(r.message || '收藏夹获取失败');
     const list = r.data?.list || [];
@@ -163,6 +170,8 @@ export default function renderHome(container, ctx) {
     favData = list;
     renderFav();
   }).catch((e) => {
-    favBox.appendChild(ui.errorBox('收藏夹加载失败：' + e.message));
+    favBox.appendChild(ui.errorBox('收藏夹加载失败：' + e.message, loadFavs));
   });
+  }
+  loadFavs();
 }

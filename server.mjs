@@ -64,9 +64,9 @@ const UA =
 const BILI_API = 'https://api.bilibili.com';
 const BILI_PASSPORT = 'https://passport.bilibili.com';
 const REFERER = 'https://www.bilibili.com/';
-// B 站连接熔断：失败后 8 秒内快速失败，避免全线干等超时
+// B 站连接熔断：失败后 4 秒内快速失败，避免全线干等超时（手动重试更快生效）
 let biliDownAt = 0;
-const BILI_DOWN_WINDOW = 8000;
+const BILI_DOWN_WINDOW = 4000;
 
 // WBI 签名重排表（来自 bilibili-API-collect 文档）
 const MIXIN_KEY_ENC_TAB = [
@@ -860,7 +860,11 @@ const server = http.createServer(async (req, res) => {
         return res.end('404 not found');
       }
       const ext = extname(file);
-      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+      // 开发期/本地应用：禁用缓存，确保刷新即拿到最新前端代码
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Cache-Control': 'no-cache',
+      });
       return res.end(readFileSync(file));
     }
 

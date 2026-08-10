@@ -82,7 +82,7 @@ var BILI_API = "https://api.bilibili.com";
 var BILI_PASSPORT = "https://passport.bilibili.com";
 var REFERER = "https://www.bilibili.com/";
 var biliDownAt = 0;
-var BILI_DOWN_WINDOW = 8e3;
+var BILI_DOWN_WINDOW = 4e3;
 var MIXIN_KEY_ENC_TAB = [
   46,
   47,
@@ -836,7 +836,10 @@ var server = import_node_http.default.createServer(async (req, res) => {
         return res.end("404 not found");
       }
       const ext = (0, import_node_path.extname)(file);
-      res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+      res.writeHead(200, {
+        "Content-Type": MIME[ext] || "application/octet-stream",
+        "Cache-Control": "no-cache"
+      });
       return res.end((0, import_node_fs.readFileSync)(file));
     }
     const q = u.searchParams;
