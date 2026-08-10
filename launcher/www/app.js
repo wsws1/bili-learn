@@ -18,10 +18,16 @@ window.addEventListener('error', (e) => logDiag('页面错误: ' + (e.message ||
 window.addEventListener('unhandledrejection', (e) => logDiag('未处理异常: ' + (e.reason && e.reason.message || e.reason)));
 
 async function api(path, timeoutMs = 8000) {
-  const res = await fetch(API_BASE + path, { signal: AbortSignal.timeout(timeoutMs) });
-  const j = await res.json();
-  if (!res.ok && !j) throw new Error('HTTP ' + res.status);
-  return j;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(API_BASE + path, { signal: ctrl.signal });
+    const j = await res.json();
+    if (!res.ok && !j) throw new Error('HTTP ' + res.status);
+    return j;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function setBadge(state, text) {
@@ -59,7 +65,6 @@ function renderLan(s) {
 
 async function boot() {
   logDiag('boot: native=' + !!window.BF_NATIVE + ' apiBase=' + (API_BASE || '(same-origin)'));
-  if (window.BF_NATIVE) $('bootSplash').hidden = false;
   const deadline = Date.now() + 60000;
   let status = null;
   let attempts = 0;
@@ -74,7 +79,6 @@ async function boot() {
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  $('bootSplash').hidden = true;
   if (status && status.ok) {
     logDiag('探测成功（第 ' + attempts + ' 次），服务运行中');
     renderStatus(status);

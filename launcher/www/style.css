@@ -236,25 +236,3 @@ h2 {
   max-height: 200px;
   overflow-y: auto;
 }
-
-.splash {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  z-index: 10;
-}
-
-.splash-logo {
-  font-size: 24px;
-  font-weight: 500;
-}
-
-.splash-tip {
-  font-size: 12.5px;
-  color: var(--muted);
-}
