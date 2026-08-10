@@ -364,7 +364,9 @@ export default function renderFollow(container, ctx) {
   }
 
   async function boot() {
-    feedBox.appendChild(ui.loadBox('加载关注与动态…'));
+    feedBox.appendChild(ui.loadBox('加载动态…'));
+    // 动态先出，博主分类异步补齐，避免全量关注拉取卡住整页
+    loadDyn(true);
     try {
       const fRes = await api.followings(user?.mid, true);
       if (fRes.code !== 0) throw new Error(fRes.message || '关注列表获取失败');
@@ -373,10 +375,13 @@ export default function renderFollow(container, ctx) {
       categorize();
       renderCats();
       renderCreators();
-      loadDyn(true);
     } catch (e) {
-      feedBox.innerHTML = '';
-      feedBox.appendChild(ui.errorBox(e.message, boot));
+      const catEl = container.querySelector('#catChips');
+      catEl.innerHTML = '';
+      const warn = document.createElement('div');
+      warn.style.cssText = 'font-size:12px;color:var(--danger);padding:8px 0';
+      warn.textContent = '博主分类加载失败：' + e.message + '（动态仍可浏览）';
+      catEl.appendChild(warn);
     }
   }
 

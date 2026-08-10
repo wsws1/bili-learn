@@ -639,12 +639,16 @@ async function runVerify() {
 let followCache = { key: '', data: null, at: 0 };
 const FOLLOW_TTL = 5 * 60 * 1000;
 
-async function getAllFollowings(vmid, tagid = '') {
+async function getAllFollowings(vmid, tagid = '', onAbort) {
   const key = tagid || 'all';
   if (followCache.key === key && followCache.data && Date.now() - followCache.at < FOLLOW_TTL) return followCache.data;
   const out = [];
   let total = 0;
   for (let page = 1; page <= 20; page++) {
+    if (onAbort && onAbort()) {
+      console.log('[zhixue-node] followings 客户端已断开，停止拉取 page=' + page + ' 已获取=' + out.length);
+      break;
+    }
     const r = await biliFetch('/x/relation/followings', { params: { vmid, pn: page, ps: 50, order: 'desc', ...(tagid ? { tagid } : {}) } });
     const d = r.json?.data;
     if (r.json?.code !== 0 || !d) {
@@ -654,10 +658,12 @@ async function getAllFollowings(vmid, tagid = '') {
     total = d.total || total;
     out.push(...(d.list || []).map(normUP));
     if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
+    if (page < 20) await new Promise((r2) => setTimeout(r2, 120));
   }
   console.log('[zhixue-node] followings 完成: total=' + total + ' 实际=' + out.length + ' tagid=' + (tagid || 'all'));
   const data = { list: out, total, pages: Math.ceil(out.length / 50) };
-  followCache = { key, data, at: Date.now() };
+  // 只有拉全了才缓存（避免把不完整结果缓存 5 分钟）
+  if (total > 0 && out.length >= total) followCache = { key, data, at: Date.now() };
   return data;
 }
 
@@ -1133,7 +1139,7 @@ const server = http.createServer(async (req, res) => {
       if (!vmid) return sendJson(res, 400, { ok: false, error: '缺少 vmid 参数' });
       const tagid = q.get('tagid') || '';
       if (q.get('all') === '1') {
-        const data = await getAllFollowings(vmid, tagid);
+        const data = await getAllFollowings(vmid, tagid, () => res.destroyed || res.writableEnded);
         return sendJson(res, 200, { ok: true, code: 0, list: data.list, total: data.total, meta: { all: true, pages: data.pages } });
       }
       const pn = Math.max(1, parseInt(q.get('pn'), 10) || 1);

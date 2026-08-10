@@ -634,12 +634,16 @@ async function runVerify() {
 }
 var followCache = { key: "", data: null, at: 0 };
 var FOLLOW_TTL = 5 * 60 * 1e3;
-async function getAllFollowings(vmid, tagid = "") {
+async function getAllFollowings(vmid, tagid = "", onAbort) {
   const key = tagid || "all";
   if (followCache.key === key && followCache.data && Date.now() - followCache.at < FOLLOW_TTL) return followCache.data;
   const out = [];
   let total = 0;
   for (let page = 1; page <= 20; page++) {
+    if (onAbort && onAbort()) {
+      console.log("[zhixue-node] followings \u5BA2\u6237\u7AEF\u5DF2\u65AD\u5F00\uFF0C\u505C\u6B62\u62C9\u53D6 page=" + page + " \u5DF2\u83B7\u53D6=" + out.length);
+      break;
+    }
     const r = await biliFetch("/x/relation/followings", { params: { vmid, pn: page, ps: 50, order: "desc", ...tagid ? { tagid } : {} } });
     const d = r.json?.data;
     if (r.json?.code !== 0 || !d) {
@@ -649,10 +653,11 @@ async function getAllFollowings(vmid, tagid = "") {
     total = d.total || total;
     out.push(...(d.list || []).map(normUP));
     if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
+    if (page < 20) await new Promise((r2) => setTimeout(r2, 120));
   }
   console.log("[zhixue-node] followings \u5B8C\u6210: total=" + total + " \u5B9E\u9645=" + out.length + " tagid=" + (tagid || "all"));
   const data = { list: out, total, pages: Math.ceil(out.length / 50) };
-  followCache = { key, data, at: Date.now() };
+  if (total > 0 && out.length >= total) followCache = { key, data, at: Date.now() };
   return data;
 }
 function lanIPs() {
@@ -1111,7 +1116,7 @@ var server = import_node_http.default.createServer(async (req, res) => {
       if (!vmid) return sendJson(res, 400, { ok: false, error: "\u7F3A\u5C11 vmid \u53C2\u6570" });
       const tagid = q.get("tagid") || "";
       if (q.get("all") === "1") {
-        const data = await getAllFollowings(vmid, tagid);
+        const data = await getAllFollowings(vmid, tagid, () => res.destroyed || res.writableEnded);
         return sendJson(res, 200, { ok: true, code: 0, list: data.list, total: data.total, meta: { all: true, pages: data.pages } });
       }
       const pn = Math.max(1, parseInt(q.get("pn"), 10) || 1);
