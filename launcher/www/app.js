@@ -2,8 +2,8 @@
 const API_BASE = window.BF_NATIVE ? 'http://127.0.0.1:3210' : '';
 const $ = (id) => document.getElementById(id);
 
-async function api(path) {
-  const res = await fetch(API_BASE + path);
+async function api(path, timeoutMs = 8000) {
+  const res = await fetch(API_BASE + path, { signal: AbortSignal.timeout(timeoutMs) });
   const j = await res.json();
   if (!res.ok && !j) throw new Error('HTTP ' + res.status);
   return j;
@@ -16,20 +16,20 @@ function setBadge(state, text) {
 }
 
 function renderStatus(s) {
-  const ok = s && s.ok && s.login && s.login.ok !== undefined;
-  if (ok) {
+  if (s && s.ok) {
     setBadge('ok', '运行中');
     $('statusText').textContent = '本地服务运行正常，可以打开网页版开始学习。';
     $('portText').textContent = s.port;
     $('nodeText').textContent = s.node;
     $('openBtn').disabled = false;
     renderLan(s);
+    // 登录态属于次要信息，额外查一次（失败不阻塞）
+    api('/api/status', 8000).then((st) => {
+      if (st && st.login && !st.login.ok) setBadge('err', '未登录');
+    }).catch(() => {});
   } else {
-    setBadge('err', s && s.login && !s.login.ok ? '未登录' : '异常');
-    $('statusText').textContent = s && s.login && !s.login.ok ? '服务正常，网页版内完成登录。' : '服务尚未就绪，请稍候…';
-    $('nodeText').textContent = s ? s.node || '-' : '-';
-    $('openBtn').disabled = false;
-    renderLan(s);
+    setBadge('err', '异常');
+    $('statusText').textContent = '服务尚未就绪，请稍候…';
   }
 }
 
@@ -48,11 +48,11 @@ function renderLan(s) {
 
 async function boot() {
   if (window.BF_NATIVE) $('bootSplash').hidden = false;
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + 60000;
   let status = null;
   while (Date.now() < deadline) {
     try {
-      status = await api('/api/status');
+      status = await api('/api/ping');
       if (status && status.ok) break;
     } catch (e) {
       // 服务尚未就绪
@@ -63,7 +63,7 @@ async function boot() {
   if (status) renderStatus(status);
   else {
     setBadge('err', '启动失败');
-    $('statusText').textContent = '本地服务启动失败，请重启应用或检查日志。';
+    $('statusText').textContent = '本地服务 60 秒内未就绪，请重启应用；若反复失败请在手机上查看应用日志。';
   }
 }
 

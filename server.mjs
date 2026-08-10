@@ -171,7 +171,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   const t0 = Date.now();
   let res;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(25000) });
   } catch (e) {
     return {
       json: { code: 'NETWORK', message: '无法连接 B 站 API：' + netDetail(e) + '。请检查网络或代理后重试。' },
@@ -759,6 +759,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     const q = u.searchParams;
+
+    // 快速就绪探针：不依赖 B 站网络，供启动器轮询
+    if (req.method === 'GET' && path === '/api/ping') {
+      return sendJson(res, 200, {
+        ok: true,
+        service: 'zhixue',
+        node: process.version,
+        port: PORT,
+        host: HOST,
+        lan: HOST !== '127.0.0.1',
+        lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`),
+      });
+    }
 
     if (req.method === 'GET' && path === '/api/status') {
       const login = await checkLogin();

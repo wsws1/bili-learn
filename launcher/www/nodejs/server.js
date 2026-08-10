@@ -227,7 +227,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = "GET", form 
   const t0 = Date.now();
   let res;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(25e3) });
   } catch (e) {
     return {
       json: { code: "NETWORK", message: "\u65E0\u6CD5\u8FDE\u63A5 B \u7AD9 API\uFF1A" + netDetail(e) + "\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u4EE3\u7406\u540E\u91CD\u8BD5\u3002" },
@@ -743,6 +743,17 @@ var server = import_node_http.default.createServer(async (req, res) => {
       return res.end((0, import_node_fs.readFileSync)(file));
     }
     const q = u.searchParams;
+    if (req.method === "GET" && path === "/api/ping") {
+      return sendJson(res, 200, {
+        ok: true,
+        service: "zhixue",
+        node: process.version,
+        port: PORT,
+        host: HOST,
+        lan: HOST !== "127.0.0.1",
+        lanIPs: lanIPs().map((ip) => `http://${ip}:${PORT}`)
+      });
+    }
     if (req.method === "GET" && path === "/api/status") {
       const login = await checkLogin();
       return sendJson(res, 200, {
