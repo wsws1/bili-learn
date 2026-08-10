@@ -1,0 +1,7 @@
+{
+  "name": "zhixue-android-node",
+  "version": "1.0.0",
+  "private": true,
+  "description": "知学 Android 内嵌后端",
+  "main": "index.js"
+}

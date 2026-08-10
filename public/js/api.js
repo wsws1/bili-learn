@@ -1,0 +1,68 @@
+// 知学前端 API 客户端：只调本地 /api 代理
+async function request(path, options = {}) {
+  const { method = 'GET', params, body } = options;
+  let url = path;
+  if (params) {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
+    }
+    const qs = sp.toString();
+    if (qs) url += '?' + qs;
+  }
+  const init = { method, headers: {} };
+  if (body) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, init);
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`接口返回异常: HTTP ${res.status}`);
+  }
+  if (!res.ok && json && json.error) throw new Error(json.error);
+  return json;
+}
+
+export const api = {
+  status: () => request('/api/status'),
+  nav: () => request('/api/nav'),
+  verify: () => request('/api/verify'),
+  netcheck: () => request('/api/netcheck'),
+
+  searchAll: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'all', page } }),
+  searchFav: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'fav', page } }),
+  searchHistory: (keyword, max = '', viewAt = '') =>
+    request('/api/search', { params: { keyword, scope: 'history', max, view_at: viewAt } }),
+
+  video: (bvid) => request('/api/video', { params: { bvid } }),
+  play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec } }),
+  report: (body) => request('/api/play/report', { method: 'POST', body }),
+
+  favFolders: (mid) => request('/api/fav/folders', { params: { up_mid: mid } }),
+  favList: (mediaId, pn = 1, keyword = '') => request('/api/fav/list', { params: { media_id: mediaId, pn, ps: 30, keyword } }),
+  favCheck: (bvid) => request('/api/fav/check', { params: { bvid } }),
+  favDeal: (rid, addIds = '', delIds = '') =>
+    request('/api/fav/deal', { method: 'POST', body: { rid, add_media_ids: addIds, del_media_ids: delIds } }),
+
+  history: (ps = 20, max = '', viewAt = '') => request('/api/history', { params: { ps, max, view_at: viewAt } }),
+  historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt } }),
+
+  followings: (mid, all = false, tagid = '') =>
+    request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid } }),
+  relationTags: () => request('/api/relation/tags'),
+  user: (mid) => request('/api/user', { params: { mid } }),
+  dynamicsAll: (offset = '', time = '') => request('/api/dynamics/all', { params: { offset, time } }),
+  dynamicsSpace: (mid, offset = '', time = '') => request('/api/dynamics/space', { params: { host_mid: mid, offset, time } }),
+  dynamicsUp: (mid, offset = '', time = '') => request('/api/dynamics/up', { params: { host_mid: mid, offset, time } }),
+
+  comments: (bvid, next = 0) => request('/api/comments', { params: { bvid, next } }),
+  upload: (mid, pn = 1, ps = 20) => request('/api/upload', { params: { mid, pn, ps } }),
+
+  loginQr: () => request('/api/login/qr'),
+  loginPoll: (key) => request('/api/login/poll', { params: { key } }),
+  loginCookie: (cookie) => request('/api/login/cookie', { method: 'POST', body: { cookie } }),
+  loginClear: () => request('/api/login/clear', { method: 'POST', body: {} }),
+};

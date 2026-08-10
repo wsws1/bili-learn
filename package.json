@@ -1,0 +1,20 @@
+{
+  "name": "bili-learn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "知学 · B 站学习播放器（本地 Node 后端 + 网页前端 → Android 启动器）",
+  "scripts": {
+    "start": "node server.mjs",
+    "android:build": "node tools/build-native.mjs && node tools/build-backend.mjs && node tools/sync-app.mjs",
+    "android:sync": "npm run android:build && npx cap sync android",
+    "add:android": "npx cap add android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/browser": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@jadejr/capacitor-nodejs": "1.0.2",
+    "esbuild": "^0.25.0"
+  }
+}

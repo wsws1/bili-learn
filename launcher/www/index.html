@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>知学 · 启动器</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="bootSplash" class="splash" hidden>
+    <div class="splash-logo">知学</div>
+    <div class="splash-tip">正在启动本地服务…</div>
+  </div>
+
+  <main class="wrap">
+    <header class="top">
+      <div class="logo">知学<span class="accent"> · B 站学习</span></div>
+      <span class="badge" id="statusBadge">检测中…</span>
+    </header>
+
+    <section class="card">
+      <h1>本地服务</h1>
+      <p class="muted" id="statusText">正在启动…</p>
+      <div class="kv">
+        <span>端口</span><b id="portText">3210</b>
+        <span>Node</span><b id="nodeText">-</b>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2>允许局域网访问</h2>
+          <p class="muted">开启后同一 WiFi 下的电脑 / 平板可访问</p>
+        </div>
+        <label class="switch"><input id="lanToggle" type="checkbox"><span class="track"></span></label>
+      </div>
+      <ul class="lan-list muted" id="lanList" hidden></ul>
+    </section>
+
+    <button class="primary" id="openBtn" type="button">打开网页版</button>
+    <p class="muted center" id="hint">打开后请先扫码或粘贴 Cookie 登录</p>
+  </main>
+
+  <script src="/native.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

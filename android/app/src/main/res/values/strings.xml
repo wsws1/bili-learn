@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">知学</string>
+    <string name="title_activity_main">知学</string>
+    <string name="package_name">com.zhixue.launcher</string>
+    <string name="custom_url_scheme">com.zhixue.launcher</string>
+</resources>

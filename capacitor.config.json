@@ -1,0 +1,11 @@
+{
+  "appId": "com.zhixue.launcher",
+  "appName": "知学",
+  "webDir": "launcher/www",
+  "plugins": {
+    "CapacitorNodeJS": {
+      "nodeDir": "nodejs",
+      "startMode": "auto"
+    }
+  }
+}
