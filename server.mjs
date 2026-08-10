@@ -126,7 +126,7 @@ function encWbiQuery(params, imgKey, subKey) {
 async function ensureWbiKeys(force = false) {
   const AGE_MS = 12 * 60 * 60 * 1000;
   if (!force && wbiCache.imgKey && Date.now() - wbiCache.fetchedAt < AGE_MS) return wbiCache;
-  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders(), signal: AbortSignal.timeout(20000) });
+  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders() });
   const j = await res.json();
   const img = j?.data?.wbi_img?.img_url || '';
   const sub = j?.data?.wbi_img?.sub_url || '';
@@ -162,7 +162,7 @@ function netDetail(e) {
 async function ensureBuvid() {
   if (cookieNames(cookieStore.cookies).includes('buvid3')) return;
   try {
-    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders(), signal: AbortSignal.timeout(20000) });
+    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders() });
     const j = await res.json();
     if (j.code === 0 && j.data?.b_3) {
       cookieStore.cookies = mergeCookies(cookieStore.cookies, `buvid3=${j.data.b_3}; buvid4=${j.data.b_4 || ''}`);
@@ -195,7 +195,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   const t0 = Date.now();
   let res;
   try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(25000) });
+    res = await fetch(url, init);
   } catch (e) {
     return {
       json: { code: 'NETWORK', message: '无法连接 B 站 API：' + netDetail(e) + '。请检查网络或代理后重试。' },
@@ -522,7 +522,6 @@ async function qrGenerate() {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/generate`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
-      signal: AbortSignal.timeout(20000),
     });
     j = await res.json();
   } catch (e) {
@@ -542,7 +541,6 @@ async function fetchCookieChain(url) {
       method: 'GET',
       redirect: 'manual',
       headers: { 'User-Agent': UA, Referer: REFERER },
-      signal: AbortSignal.timeout(20000),
     });
     const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
     if (setCookies.length) {
@@ -561,7 +559,6 @@ async function qrPoll(key) {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/poll?qrcode_key=${encodeURIComponent(key)}`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
-      signal: AbortSignal.timeout(20000),
     });
     j = await res.json();
   } catch (e) {
