@@ -43,6 +43,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="keep local Node server alive for the paired web app" />
         </service>
+
+        <activity
+            android:name=".WebViewActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|uiMode" />
     </application>
 
     <!-- Permissions -->

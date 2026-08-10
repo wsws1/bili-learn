@@ -41,8 +41,11 @@
       <p class="check-result" id="checkResult">提示：鸿蒙 设置 → WLAN → 当前网络 → 详情 可查看真实 IP</p>
     </section>
 
-    <button class="primary" id="openBtn" type="button">打开网页版</button>
-    <p class="muted center" id="hint">打开后请先扫码或粘贴 Cookie 登录</p>
+    <div class="row" style="gap:8px">
+      <button class="primary" id="openBtn" type="button" style="flex:1">应用内打开</button>
+      <button class="primary ghost" id="externalBtn" type="button" style="flex:1">外部浏览器打开</button>
+    </div>
+    <p class="muted center" id="hint">应用内打开：App 自带 WebView，不受后台冻结影响；外部打开：系统浏览器，共享 Chrome 登录态</p>
 
     <button class="primary ghost" id="retryBtn" type="button" hidden>重试启动</button>
     <button class="primary ghost" id="logBtn" type="button">查看后端日志</button>

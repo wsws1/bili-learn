@@ -39,5 +39,15 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {
             }
         }
+
+        @JavascriptInterface
+        public void openInApp(String url) {
+            try {
+                Intent intent = new Intent(activity, WebViewActivity.class);
+                intent.putExtra("url", url);
+                activity.startActivity(intent);
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

@@ -27,3 +27,18 @@ window.openWeb = (url) => {
   window.open(url, '_blank');
   return Promise.resolve();
 };
+
+// 软件内打开：App 自带 WebView 全屏打开（受应用控制，不冻结）
+window.openWebInApp = (url) => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.openInApp === 'function') {
+        window.ExternalBrowser.openInApp(url);
+        return Promise.resolve();
+      }
+    } catch {}
+    return Browser.open({ url });
+  }
+  window.open(url, '_blank');
+  return Promise.resolve();
+};

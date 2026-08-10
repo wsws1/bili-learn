@@ -119,7 +119,13 @@ $('lanToggle').addEventListener('change', async (e) => {
 
 $('openBtn').addEventListener('click', () => {
   const base = API_BASE || 'http://127.0.0.1:3210';
-  logDiag('打开网页版: ' + base);
+  logDiag('应用内打开网页版: ' + base);
+  window.openWebInApp(base);
+});
+
+$('externalBtn').addEventListener('click', () => {
+  const base = API_BASE || 'http://127.0.0.1:3210';
+  logDiag('外部浏览器打开网页版: ' + base);
   window.openWeb(base);
 });
 
