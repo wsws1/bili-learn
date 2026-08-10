@@ -130,10 +130,13 @@ function encWbiQuery(params, imgKey, subKey) {
   return query + '&w_rid=' + wRid;
 }
 
-async function ensureWbiKeys(force = false) {
+async function ensureWbiKeys(force = false, signal = null) {
   const AGE_MS = 12 * 60 * 60 * 1000;
   if (!force && wbiCache.imgKey && Date.now() - wbiCache.fetchedAt < AGE_MS) return wbiCache;
-  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders(), signal: AbortSignal.timeout(6000) });
+  const res = await fetch(`${BILI_API}/x/web-interface/nav`, {
+    headers: baseHeaders(),
+    signal: signal ? AbortSignal.any([AbortSignal.timeout(6000), signal]) : AbortSignal.timeout(6000),
+  });
   const j = await res.json();
   const img = j?.data?.wbi_img?.img_url || '';
   const sub = j?.data?.wbi_img?.sub_url || '';
@@ -167,10 +170,13 @@ function netDetail(e) {
   return (e?.message || 'fetch failed') + (base ? `（原因：${base}）` : '');
 }
 
-async function ensureBuvid() {
+async function ensureBuvid(signal = null) {
   if (cookieNames(cookieStore.cookies).includes('buvid3')) return;
   try {
-    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders(), signal: AbortSignal.timeout(6000) });
+    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, {
+      headers: baseHeaders(),
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(6000), signal]) : AbortSignal.timeout(6000),
+    });
     const j = await res.json();
     if (j.code === 0 && j.data?.b_3) {
       cookieStore.cookies = mergeCookies(cookieStore.cookies, `buvid3=${j.data.b_3}; buvid4=${j.data.b_4 || ''}`);
@@ -182,8 +188,8 @@ async function ensureBuvid() {
   }
 }
 
-async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form = null, base = BILI_API, retried = false } = {}) {
-  await ensureBuvid();
+async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form = null, base = BILI_API, retried = false, signal = null } = {}) {
+  await ensureBuvid(signal);
   // B 站刚失败过：快速失败，避免每个请求都干等超时（8 秒后自动重试）
   if (biliDownAt && Date.now() - biliDownAt < BILI_DOWN_WINDOW) {
     return {
@@ -194,12 +200,22 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   }
   let url;
   const init = { method, headers: baseHeaders() };
+  const t0 = Date.now();
   if (form) {
     init.headers['Content-Type'] = 'application/x-www-form-urlencoded';
     init.body = new URLSearchParams(form).toString();
     url = `${base}${path}`;
   } else if (wbi) {
-    await ensureWbiKeys();
+    try {
+      await ensureWbiKeys(false, signal);
+    } catch (e) {
+      // WBI 签名获取失败（含客户端已断开）返回可读错误，避免裸 500
+      return {
+        json: { code: 'WBI_ERROR', message: 'WBI 签名获取失败：' + (e?.message || e) },
+        text: '',
+        meta: { endpoint: path, status: 0, wbi, timeMs: Date.now() - t0, url: '' },
+      };
+    }
     url = `${base}${path}?${encWbiQuery(params, wbiCache.imgKey, wbiCache.subKey)}`;
   } else {
     const sp = new URLSearchParams();
@@ -208,11 +224,21 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
     url = `${base}${path}${qs ? '?' + qs : ''}`;
   }
 
-  const t0 = Date.now();
   let res;
   try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(6000) });
+    res = await fetch(url, {
+      ...init,
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(6000), signal]) : AbortSignal.timeout(6000),
+    });
   } catch (e) {
+    // 客户端已断开：直接取消，不计入 B 站熔断，也不再回写响应
+    if (signal?.aborted) {
+      return {
+        json: { code: 'CLIENT_ABORT', message: '客户端已断开，请求取消' },
+        text: '',
+        meta: { endpoint: path, status: 0, wbi, timeMs: Date.now() - t0, url: '' },
+      };
+    }
     biliDownAt = Date.now();
     return {
       json: { code: 'NETWORK', message: '无法连接 B 站 API：' + netDetail(e) + '。请检查网络或代理后重试。' },
@@ -236,7 +262,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   // WBI 签名失效 / 风控：刷新 key 重试一次
   if (wbi && !retried && json && (json.code === -403 || json.code === -352)) {
     wbiCache.fetchedAt = 0;
-    return biliFetch(path, { params, wbi, method, form, base, retried: true });
+    return biliFetch(path, { params, wbi, method, form, base, retried: true, signal });
   }
   return { json, text, meta };
 }
@@ -279,7 +305,7 @@ function normHist(h) {
 }
 
 // 历史内搜索：游标分页 + 标题本地过滤（最多翻 10 页 / 凑满 target 条）
-async function searchHistory(keyword, max, viewAt, target = 20, onAbort) {
+async function searchHistory(keyword, max, viewAt, target = 20, onAbort, signal = null) {
   const kw = keyword.toLowerCase();
   const matches = [];
   let curMax = max || '';
@@ -290,7 +316,7 @@ async function searchHistory(keyword, max, viewAt, target = 20, onAbort) {
     const params = { ps: 20 };
     if (curMax) params.max = curMax;
     if (curViewAt) params.view_at = curViewAt;
-    const r = await biliFetch('/x/web-interface/history/cursor', { params });
+    const r = await biliFetch('/x/web-interface/history/cursor', { params, signal });
     const d = r.json?.data;
     if (r.json?.code !== 0 || !d) break;
     for (const it of d.list || []) {
@@ -448,12 +474,13 @@ function buildMpd(dash) {
 }
 
 // ---------- 播放流策略：先 DASH，失败回退单文件 ----------
-async function getPlayData(bvid, cid, qn, codec) {
+async function getPlayData(bvid, cid, qn, codec, signal = null) {
   const qnNum = Number(qn) || 80; // 默认 1080P，无权限时 B 站自动降级
   const want = codec === 'avc' || codec === 'hevc' || codec === 'av1' ? codec : 'auto';
   const r2 = await biliFetch('/x/player/wbi/playurl', {
     params: { bvid, cid, fnval: 4048, fourk: 1, qn: qnNum },
     wbi: true,
+    signal,
   });
   const d2 = r2.json?.data;
   if (r2.json?.code === 0 && d2?.dash?.video?.length) {
@@ -486,6 +513,7 @@ async function getPlayData(bvid, cid, qn, codec) {
   const r1 = await biliFetch('/x/player/wbi/playurl', {
     params: { bvid, cid, fnval: 1, fourk: 1, qn: qnNum },
     wbi: true,
+    signal,
   });
   const d1 = r1.json?.data;
   if (r1.json?.code === 0 && d1?.durl?.length) {
@@ -657,11 +685,11 @@ async function runVerify() {
 let followCache = { key: '', data: null, at: 0 };
 const FOLLOW_TTL = 5 * 60 * 1000;
 
-async function getAllFollowings(vmid, tagid = '', onAbort) {
+async function getAllFollowings(vmid, tagid = '', onAbort, signal = null) {
   const key = tagid || 'all';
   if (followCache.key === key && followCache.data && Date.now() - followCache.at < FOLLOW_TTL) return followCache.data;
   const paramsOf = (pn) => ({ vmid, pn, ps: 50, order: 'desc', ...(tagid ? { tagid } : {}) });
-  const page1 = await biliFetch('/x/relation/followings', { params: paramsOf(1) });
+  const page1 = await biliFetch('/x/relation/followings', { params: paramsOf(1), signal });
   const d1 = page1.json?.data;
   if (page1.json?.code !== 0 || !d1) {
     console.log('[zhixue-node] followings 首页失败: code=' + page1.json?.code + ' msg=' + (page1.json?.message || ''));
@@ -676,7 +704,7 @@ async function getAllFollowings(vmid, tagid = '', onAbort) {
   // 剩余页并发拉取（限 4 路），手机网络下总耗时从 20 次串行降到约 1/4
   await mapLimit(pageNums, 3, async (page) => {
     if (onAbort && onAbort()) return;
-    const r = await biliFetch('/x/relation/followings', { params: paramsOf(page) });
+    const r = await biliFetch('/x/relation/followings', { params: paramsOf(page), signal });
     const d = r.json?.data;
     if (r.json?.code === 0 && d?.list) rest.push({ page, list: d.list.map(normUP) });
     else console.log('[zhixue-node] followings 第 ' + page + ' 页失败: code=' + r.json?.code + ' msg=' + (r.json?.message || ''));
@@ -771,6 +799,10 @@ const server = http.createServer(async (req, res) => {
   res.on('finish', () => {
     console.log('[zhixue-node] ' + req.method + ' ' + path + ' -> ' + res.statusCode + ' ' + (Date.now() - reqStart) + 'ms');
   });
+  // 客户端断开即取消该请求的上游 B 站调用，避免挂起请求在服务端继续空转占用连接
+  const reqAbort = new AbortController();
+  res.on('close', () => reqAbort.abort());
+  const bili = (p, o = {}) => biliFetch(p, { ...o, signal: reqAbort.signal });
 
   try {
     if (req.method === 'OPTIONS') {
@@ -903,7 +935,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/nav') {
-      const r = await biliFetch('/x/web-interface/nav');
+      const r = await bili('/x/web-interface/nav');
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
@@ -914,7 +946,7 @@ const server = http.createServer(async (req, res) => {
       if (!keyword) return sendJson(res, 400, { ok: false, error: '缺少 keyword 参数' });
 
       if (scope === 'fav') {
-        const r = await biliFetch('/x/v3/fav/resource/list', {
+        const r = await bili('/x/v3/fav/resource/list', {
           params: { type: 1, keyword, pn: page, ps: 20, platform: 'web' },
         });
         if (r.json?.code !== 0) return sendJson(res, 200, { ok: false, code: r.json?.code, message: r.json?.message, meta: r.meta });
@@ -928,7 +960,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (scope === 'history') {
-        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded);
+        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded, reqAbort.signal);
         return sendJson(res, 200, {
           ok: true, code: 0, scope, keyword, page: 0,
           hasMore: histRes.hasMore, nextMax: histRes.nextMax, nextViewAt: histRes.nextViewAt,
@@ -936,7 +968,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const r = await biliFetch('/x/web-interface/wbi/search/type', {
+      const r = await bili('/x/web-interface/wbi/search/type', {
         params: { search_type: 'video', keyword, page, page_size: 20 },
         wbi: true,
       });
@@ -955,7 +987,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/video') {
       const bvid = q.get('bvid') || '';
       if (!bvid) return sendJson(res, 400, { ok: false, error: '缺少 bvid 参数' });
-      const r = await biliFetch('/x/web-interface/view', { params: { bvid } });
+      const r = await bili('/x/web-interface/view', { params: { bvid } });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
@@ -963,7 +995,7 @@ const server = http.createServer(async (req, res) => {
       const bvid = q.get('bvid') || '';
       const cid = q.get('cid') || '';
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: '缺少 bvid/cid 参数' });
-      const r = await biliFetch('/x/player/wbi/playurl', { params: { bvid, cid, fnval: 4048, fourk: 1 }, wbi: true });
+      const r = await bili('/x/player/wbi/playurl', { params: { bvid, cid, fnval: 4048, fourk: 1 }, wbi: true });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
@@ -971,7 +1003,7 @@ const server = http.createServer(async (req, res) => {
       const bvid = q.get('bvid') || '';
       const cid = q.get('cid') || '';
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: '缺少 bvid/cid 参数' });
-      const r = await getPlayData(bvid, cid, q.get('qn'), q.get('codec') || 'auto');
+      const r = await getPlayData(bvid, cid, q.get('qn'), q.get('codec') || 'auto', reqAbort.signal);
       return sendJson(res, 200, r);
     }
 
@@ -981,7 +1013,7 @@ const server = http.createServer(async (req, res) => {
       const codec = q.get('codec') || 'auto';
       const height = parseInt(q.get('height'), 10) || 0;
       if (!bvid || !cid) return sendJson(res, 400, { ok: false, error: '缺少 bvid/cid 参数' });
-      const r2 = await biliFetch('/x/player/wbi/playurl', {
+      const r2 = await bili('/x/player/wbi/playurl', {
         params: { bvid, cid, fnval: 4048, fourk: 1, qn: Number(q.get('qn')) || 80 },
         wbi: true,
       });
@@ -1014,7 +1046,7 @@ const server = http.createServer(async (req, res) => {
       const mid = Number(body.mid) || 0;
       if (!aid || !cid || !mid) return sendJson(res, 400, { ok: false, error: '缺少 aid/cid/mid 参数' });
       const playType = [0, 1, 2, 3, 4].includes(Number(body.play_type)) ? Number(body.play_type) : 0;
-      const r = await biliFetch('/x/click-interface/web/heartbeat', {
+      const r = await bili('/x/click-interface/web/heartbeat', {
         method: 'POST',
         form: {
           aid,
@@ -1036,7 +1068,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/upload') {
       const mid = q.get('mid') || '';
       if (!mid) return sendJson(res, 400, { ok: false, error: '缺少 mid 参数' });
-      const r = await biliFetch('/x/space/wbi/arc/search', {
+      const r = await bili('/x/space/wbi/arc/search', {
         params: { mid, pn: q.get('pn') || 1, ps: q.get('ps') || 20, order: 'pubdate' },
         wbi: true,
       });
@@ -1046,7 +1078,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/fav/folders') {
       const mid = q.get('up_mid') || '';
       if (!mid) return sendJson(res, 400, { ok: false, error: '缺少 up_mid 参数' });
-      const r = await biliFetch('/x/v3/fav/folder/created/list-all', { params: { up_mid: mid, type: 0 } });
+      const r = await bili('/x/v3/fav/folder/created/list-all', { params: { up_mid: mid, type: 0 } });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
@@ -1061,14 +1093,14 @@ const server = http.createServer(async (req, res) => {
         order: 'mtime',
       };
       if (q.get('keyword')) params.keyword = q.get('keyword');
-      const r = await biliFetch('/x/v3/fav/resource/list', { params });
+      const r = await bili('/x/v3/fav/resource/list', { params });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
     if (req.method === 'GET' && path === '/api/history') {
       const keyword = (q.get('keyword') || '').trim();
       if (keyword) {
-        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded);
+        const histRes = await searchHistory(keyword, q.get('max') || '', q.get('view_at') || '', 20, () => res.destroyed || res.writableEnded, reqAbort.signal);
         return sendJson(res, 200, {
           ok: true, code: 0, keyword,
           hasMore: histRes.hasMore, nextMax: histRes.nextMax, nextViewAt: histRes.nextViewAt,
@@ -1078,7 +1110,7 @@ const server = http.createServer(async (req, res) => {
       const params = { ps: q.get('ps') || 20 };
       if (q.get('max')) params.max = q.get('max');
       if (q.get('view_at')) params.view_at = q.get('view_at');
-      const r = await biliFetch('/x/web-interface/history/cursor', { params });
+      const r = await bili('/x/web-interface/history/cursor', { params });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
@@ -1125,12 +1157,12 @@ const server = http.createServer(async (req, res) => {
       const bvid = q.get('bvid') || '';
       const next = parseInt(q.get('next'), 10) || 0;
       if (!bvid) return sendJson(res, 400, { ok: false, error: '缺少 bvid 参数' });
-      const view = await biliFetch('/x/web-interface/view', { params: { bvid } });
+      const view = await bili('/x/web-interface/view', { params: { bvid } });
       const aid = view.json?.data?.aid;
       if (view.json?.code !== 0 || !aid) {
         return sendJson(res, 200, { ok: false, code: view.json?.code, message: view.json?.message || '获取视频 aid 失败' });
       }
-      const r = await biliFetch('/x/v2/reply/main', { params: { type: 1, oid: aid, mode: 3, next, ps: 20 } });
+      const r = await bili('/x/v2/reply/main', { params: { type: 1, oid: aid, mode: 3, next, ps: 20 } });
       if (r.json?.code !== 0) {
         return sendJson(res, 200, { ok: false, code: r.json?.code, message: r.json?.message, meta: r.meta });
       }
@@ -1151,19 +1183,19 @@ const server = http.createServer(async (req, res) => {
       if (!bvid) return sendJson(res, 400, { ok: false, error: '缺少 bvid 参数' });
       const cached = favCheckCache.get(bvid);
       if (cached && Date.now() - cached.at < 3 * 60 * 1000) return sendJson(res, 200, cached.data);
-      const view = await biliFetch('/x/web-interface/view', { params: { bvid } });
+      const view = await bili('/x/web-interface/view', { params: { bvid } });
       const aid = view.json?.data?.aid;
       if (view.json?.code !== 0 || !aid) {
         return sendJson(res, 200, { ok: false, code: view.json?.code, message: view.json?.message || '获取视频 aid 失败' });
       }
       const login = await checkLogin();
       if (!login.ok) return sendJson(res, 200, { ok: false, needsLogin: true, message: '未登录' });
-      const foldersRes = await biliFetch('/x/v3/fav/folder/created/list-all', { params: { up_mid: login.mid, type: 0 } });
+      const foldersRes = await bili('/x/v3/fav/folder/created/list-all', { params: { up_mid: login.mid, type: 0 } });
       const folders = foldersRes.json?.data?.list || [];
       // 并行（限流 5 路）检查各收藏夹，避免 45 个收藏夹串行拖慢
       const out = (await mapLimit(folders, 3, async (f) => {
         if (res.destroyed || res.writableEnded) return null;
-        const idsRes = await biliFetch('/x/v3/fav/resource/ids', { params: { media_id: f.id, platform: 'web' } });
+        const idsRes = await bili('/x/v3/fav/resource/ids', { params: { media_id: f.id, platform: 'web' } });
         const ids = idsRes.json?.data || [];
         return { id: f.id, title: f.title, media_count: f.media_count, has: ids.some((x) => x.id === aid) };
       })).filter(Boolean);
@@ -1180,7 +1212,7 @@ const server = http.createServer(async (req, res) => {
       if (!rid) return sendJson(res, 400, { ok: false, error: '缺少 rid(aid)' });
       const csrf = (cookieStore.cookies.match(/bili_jct=([^;]+)/) || [])[1] || '';
       if (!csrf) return sendJson(res, 200, { ok: false, error: '缺少 bili_jct，登录状态可能已过期' });
-      const r = await biliFetch('/x/v3/fav/resource/deal', {
+      const r = await bili('/x/v3/fav/resource/deal', {
         method: 'POST',
         form: {
           rid, type: 2, platform: 'web',
@@ -1199,12 +1231,12 @@ const server = http.createServer(async (req, res) => {
       if (!vmid) return sendJson(res, 400, { ok: false, error: '缺少 vmid 参数' });
       const tagid = q.get('tagid') || '';
       if (q.get('all') === '1') {
-        const data = await getAllFollowings(vmid, tagid, () => res.destroyed || res.writableEnded);
+        const data = await getAllFollowings(vmid, tagid, () => res.destroyed || res.writableEnded, reqAbort.signal);
         return sendJson(res, 200, { ok: true, code: 0, list: data.list, total: data.total, meta: { all: true, pages: data.pages } });
       }
       const pn = Math.max(1, parseInt(q.get('pn'), 10) || 1);
       const ps = Math.min(50, Math.max(1, parseInt(q.get('ps'), 10) || 20));
-      const r = await biliFetch('/x/relation/followings', { params: { vmid, pn, ps, order: 'desc', ...(tagid ? { tagid } : {}) } });
+      const r = await bili('/x/relation/followings', { params: { vmid, pn, ps, order: 'desc', ...(tagid ? { tagid } : {}) } });
       const d = r.json?.data;
       return sendJson(res, 200, {
         ok: r.json?.code === 0,
@@ -1217,14 +1249,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/relation/tags') {
-      const r = await biliFetch('/x/relation/tags', { params: {} });
+      const r = await bili('/x/relation/tags', { params: {} });
       return sendJson(res, 200, { ok: r.json?.code === 0, ...r.json, meta: r.meta });
     }
 
     if (req.method === 'GET' && path === '/api/user') {
       const mid = q.get('mid') || '';
       if (!mid) return sendJson(res, 400, { ok: false, error: '缺少 mid 参数' });
-      const r = await biliFetch('/x/web-interface/card', { params: { mid } });
+      const r = await bili('/x/web-interface/card', { params: { mid } });
       const card = r.json?.data?.card;
       return sendJson(res, 200, {
         ok: r.json?.code === 0,
@@ -1238,7 +1270,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/dynamics/space') {
       const hostMid = q.get('host_mid') || '';
       if (!hostMid) return sendJson(res, 400, { ok: false, error: '缺少 host_mid 参数' });
-      const r = await biliFetch('/x/polymer/web-dynamic/v1/feed/space', {
+      const r = await bili('/x/polymer/web-dynamic/v1/feed/space', {
         params: {
           host_mid: hostMid,
           offset: q.get('offset') || '',
@@ -1255,7 +1287,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/dynamics/up') {
       const hostMid = q.get('host_mid') || '';
       if (!hostMid) return sendJson(res, 400, { ok: false, error: '缺少 host_mid 参数' });
-      const r = await biliFetch('/x/polymer/web-dynamic/v1/feed/all', {
+      const r = await bili('/x/polymer/web-dynamic/v1/feed/all', {
         params: {
           host_mid: hostMid,
           offset: q.get('offset') || '',
@@ -1271,7 +1303,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/dynamics/all') {
-      const r = await biliFetch('/x/polymer/web-dynamic/v1/feed/all', {
+      const r = await bili('/x/polymer/web-dynamic/v1/feed/all', {
         params: { offset: q.get('offset') || '', time: q.get('time') || '' },
       });
       return sendJson(res, 200, normalizeDynFeed(r));
@@ -1327,6 +1359,9 @@ server.listen(PORT, currentHost, () => {
   console.log(`知学 started: http://localhost:${PORT}`);
   for (const ip of lanIPs()) console.log(`局域网访问（同一 WiFi）: http://${ip}:${PORT}`);
   console.log('Cookie 仅保存在本机 data/cookies.json，请勿把该服务暴露到公网。');
+  // 预热 buvid 与 WBI 签名，避免冷启动后首次搜索串行等待多个上游请求
+  ensureBuvid().catch(() => {});
+  ensureWbiKeys().catch(() => {});
 });
 
 // Android：接收启动器的局域网开关消息，热切换监听地址

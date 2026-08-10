@@ -27,7 +27,6 @@ async function request(path, options = {}) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  // 网络失败自动重试（手机网络抖动时自动恢复，避免频繁手动重试）
   let lastErr = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -37,30 +36,36 @@ async function request(path, options = {}) {
       timedOut = true;
       ctrl.abort();
     }, timeoutMs);
-    let res;
     try {
-      res = await fetch(url, { ...init, signal: ctrl.signal });
-    } catch (e) {
-      lastErr = e.name === 'AbortError'
-        ? new Error(timedOut ? `请求超时（${timeoutMs}ms）：${path}` : '已取消（页面切换）')
-        : new Error('网络错误：' + e.message + '（' + path + '）');
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1200));
-        continue;
+      let res;
+      try {
+        res = await fetch(url, { ...init, signal: ctrl.signal });
+      } catch (e) {
+        lastErr = e.name === 'AbortError'
+          ? new Error(timedOut ? `请求超时（${timeoutMs}ms）：${path}` : '已取消（页面切换）')
+          : new Error('网络错误：' + e.message + '（' + path + '）');
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 1200));
+          continue;
+        }
+        throw lastErr;
       }
-      throw lastErr;
+      let json;
+      try {
+        // 超时与页面切换取消覆盖整个响应读取，避免服务端响应体卡住时前端永远停在“加载中”
+        json = await res.json();
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          throw timedOut ? new Error(`请求超时（${timeoutMs}ms）：${path}`) : new Error('已取消（页面切换）');
+        }
+        throw new Error(`接口返回异常: HTTP ${res.status}`);
+      }
+      if (!res.ok && json && json.error) throw new Error(json.error);
+      return json;
     } finally {
       clearTimeout(timer);
       activeControllers.delete(ctrl);
     }
-    let json;
-    try {
-      json = await res.json();
-    } catch {
-      throw new Error(`接口返回异常: HTTP ${res.status}`);
-    }
-    if (!res.ok && json && json.error) throw new Error(json.error);
-    return json;
   }
   throw lastErr;
 }
@@ -71,10 +76,10 @@ export const api = {
   verify: () => request('/api/verify'),
   netcheck: () => request('/api/netcheck'),
 
-  searchAll: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'all', page } }),
-  searchFav: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'fav', page } }),
+  searchAll: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'all', page }, timeoutMs: 15000 }),
+  searchFav: (keyword, page = 1) => request('/api/search', { params: { keyword, scope: 'fav', page }, timeoutMs: 15000 }),
   searchHistory: (keyword, max = '', viewAt = '') =>
-    request('/api/search', { params: { keyword, scope: 'history', max, view_at: viewAt } }),
+    request('/api/search', { params: { keyword, scope: 'history', max, view_at: viewAt }, timeoutMs: 15000 }),
 
   video: (bvid) => request('/api/video', { params: { bvid }, timeoutMs: 10000 }),
   play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec }, timeoutMs: 10000 }),
@@ -86,8 +91,8 @@ export const api = {
   favDeal: (rid, addIds = '', delIds = '') =>
     request('/api/fav/deal', { method: 'POST', body: { rid, add_media_ids: addIds, del_media_ids: delIds } }),
 
-  history: (ps = 20, max = '', viewAt = '') => request('/api/history', { params: { ps, max, view_at: viewAt } }),
-  historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt } }),
+  history: (ps = 20, max = '', viewAt = '') => request('/api/history', { params: { ps, max, view_at: viewAt }, timeoutMs: 15000 }),
+  historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt }, timeoutMs: 15000 }),
 
   followings: (mid, all = false, tagid = '') =>
     request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid }, timeoutMs: 30000, retries: 0 }),

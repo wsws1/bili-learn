@@ -92,7 +92,9 @@ export default function renderSearch(container, ctx, route) {
     recentBox.appendChild(chips);
   }
 
+  let runId = 0;
   async function run(replace) {
+    const id = ++runId;
     resultBox.innerHTML = '';
     resultBox.appendChild(ui.loadBox('搜索中…'));
     moreBtn.classList.add('hidden');
@@ -106,15 +108,18 @@ export default function renderSearch(container, ctx, route) {
         state.nextViewAt = r.nextViewAt || '';
       } else r = await api.searchAll(state.keyword, state.page);
 
+      if (id !== runId) return; // 过期响应（已发起更新的搜索/已切页）直接丢弃
       if (!r.ok && r.code !== 0) throw new Error(r.message || '搜索失败');
       const items = r.items || [];
       resultBox.querySelector('.state-box')?.remove();
       if (!items.length && state.page === 1) {
+        if (id !== runId) return;
         resultBox.appendChild(ui.stateBox('没有找到「' + state.keyword + '」' + (state.scope === 'fav' ? ' 的收藏内容' : state.scope === 'history' ? ' 的历史记录' : ''), 'search'));
         return;
       }
       state.items = replace ? items : state.items.concat(items);
       if (replace) resultBox.innerHTML = '';
+      if (id !== runId) return;
       state.items.forEach((v) => {
         resultBox.appendChild(ui.videoRow(v, {
           progress: v.progress,
@@ -126,6 +131,7 @@ export default function renderSearch(container, ctx, route) {
       else state.hasMore = !!state.nextMax;
       moreBtn.classList.toggle('hidden', !state.hasMore);
     } catch (e) {
+      if (id !== runId) return; // 被新搜索/切页取代的旧请求，错误也丢弃
       resultBox.innerHTML = '';
       resultBox.appendChild(ui.errorBox(e.message, () => run(true)));
     }

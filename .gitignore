@@ -1,6 +1,7 @@
 data/cookies.json
 server.log
 server.err
+server.err.log
 node_modules/
 launcher/www/nodejs/app/
 launcher/www/native.js
