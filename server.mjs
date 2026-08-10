@@ -102,7 +102,7 @@ function encWbiQuery(params, imgKey, subKey) {
 async function ensureWbiKeys(force = false) {
   const AGE_MS = 12 * 60 * 60 * 1000;
   if (!force && wbiCache.imgKey && Date.now() - wbiCache.fetchedAt < AGE_MS) return wbiCache;
-  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders() });
+  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders(), signal: AbortSignal.timeout(20000) });
   const j = await res.json();
   const img = j?.data?.wbi_img?.img_url || '';
   const sub = j?.data?.wbi_img?.sub_url || '';
@@ -138,7 +138,7 @@ function netDetail(e) {
 async function ensureBuvid() {
   if (cookieNames(cookieStore.cookies).includes('buvid3')) return;
   try {
-    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders() });
+    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders(), signal: AbortSignal.timeout(20000) });
     const j = await res.json();
     if (j.code === 0 && j.data?.b_3) {
       cookieStore.cookies = mergeCookies(cookieStore.cookies, `buvid3=${j.data.b_3}; buvid4=${j.data.b_4 || ''}`);
@@ -498,6 +498,7 @@ async function qrGenerate() {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/generate`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
     });
     j = await res.json();
   } catch (e) {
@@ -517,6 +518,7 @@ async function fetchCookieChain(url) {
       method: 'GET',
       redirect: 'manual',
       headers: { 'User-Agent': UA, Referer: REFERER },
+      signal: AbortSignal.timeout(20000),
     });
     const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
     if (setCookies.length) {
@@ -535,6 +537,7 @@ async function qrPoll(key) {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/poll?qrcode_key=${encodeURIComponent(key)}`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
     });
     j = await res.json();
   } catch (e) {
@@ -974,9 +977,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/login/cookie') {
       const body = await readBody(req);
       const raw = body?.cookie || body?.raw || '';
+      console.log(
+        '[zhixue-node] login/cookie: len=' + String(raw).length +
+        ' hasSESSDATA=' + String(raw).includes('SESSDATA=') +
+        ' hasJCT=' + String(raw).includes('bili_jct=')
+      );
       if (!raw || !raw.includes('=')) return sendJson(res, 400, { ok: false, error: 'Cookie 格式不正确' });
       setRawCookies(raw);
       const login = await checkLogin();
+      console.log('[zhixue-node] login/cookie result: ok=' + login.ok + ' code=' + login.code + ' msg=' + (login.message || ''));
       return sendJson(res, 200, { ok: true, login });
     }
 
@@ -1149,19 +1158,21 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/netcheck') {
       const t0 = Date.now();
       try {
-        const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, {
+        const up = await fetch(`${BILI_API}/x/frontend/finger/spi`, {
           headers: baseHeaders(),
           signal: AbortSignal.timeout(10000),
         });
-        const j = await res.json();
+        const j = await up.json();
+        console.log('[zhixue-node] netcheck: http=' + up.status + ' code=' + j.code + ' time=' + (Date.now() - t0) + 'ms');
         return sendJson(res, 200, {
           ok: j.code === 0,
-          http: res.status,
+          http: up.status,
           timeMs: Date.now() - t0,
           code: j.code,
           message: j.message || '',
         });
       } catch (e) {
+        console.error('[zhixue-node] netcheck failed:', netDetail(e));
         return sendJson(res, 200, { ok: false, timeMs: Date.now() - t0, error: netDetail(e) });
       }
     }
@@ -1193,6 +1204,7 @@ if (process.env.BF_ANDROID === '1') {
       bridge.channel.addListener('set-lan', (value) => {
         const lan = value === true || value === 'on' || value === '1';
         const host = lan ? '0.0.0.0' : '127.0.0.1';
+        console.log('[zhixue-node] set-lan received: ' + String(value) + ' -> bind ' + host);
         try {
           writeFileSync(join(DATA_DIR, 'settings.json'), JSON.stringify({ lan, host }, null, 2));
         } catch {}
@@ -1206,3 +1218,7 @@ if (process.env.BF_ANDROID === '1') {
     }
   } catch {}
 }
+
+server.on('error', (e) => {
+  console.error('[zhixue-node] server error:', e && e.message ? e.message : e);
+});

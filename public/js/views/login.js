@@ -122,22 +122,27 @@ export default function renderLogin(container, ctx) {
       ui.toast('请先粘贴 Cookie');
       return;
     }
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true;
-    btn.textContent = '验证中…';
-    try {
-      const r = await api.loginCookie(raw);
-      if (r.login?.ok) {
-        await ctx.refreshUser();
-        ui.toast('登录成功');
-        go('home');
-      } else {
-        setStatus(r.login?.message || 'Cookie 无效或已过期，请重新复制');
-        btn.disabled = false;
-        btn.textContent = '使用 Cookie 登录';
-      }
-    } catch (err) {
-      setStatus('登录失败：' + err.message);
+      const btn = e.target.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.textContent = '验证中…';
+      console.log('[zhixue-web] login/cookie: len=' + raw.length + ' hasSESSDATA=' + raw.includes('SESSDATA=') + ' hasJCT=' + raw.includes('bili_jct='));
+      setStatus('正在验证 Cookie…');
+      try {
+        const r = await api.loginCookie(raw);
+        if (r.login?.ok) {
+          console.log('[zhixue-web] login/cookie 成功: ' + (r.login.uname || ''));
+          await ctx.refreshUser();
+          ui.toast('登录成功');
+          go('home');
+        } else {
+          console.log('[zhixue-web] login/cookie 失败: ' + (r.login?.message || '未知'));
+          setStatus(r.login?.message || 'Cookie 无效或已过期，请重新复制');
+          btn.disabled = false;
+          btn.textContent = '使用 Cookie 登录';
+        }
+      } catch (err) {
+        console.log('[zhixue-web] login/cookie 异常: ' + err.message);
+        setStatus('登录失败：' + err.message);
       btn.disabled = false;
       btn.textContent = '使用 Cookie 登录';
     }

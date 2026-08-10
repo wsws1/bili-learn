@@ -97,10 +97,18 @@ $('lanToggle').addEventListener('change', async (e) => {
     logDiag('切换局域网: ' + (on ? 'on' : 'off'));
     await window.bridgeSend('set-lan', on ? 'on' : 'off');
     setBadge('ok', '已切换');
-    $('statusText').textContent = '局域网模式已' + (on ? '开启' : '关闭') + '，正在重启监听…';
-    await new Promise((r) => setTimeout(r, 600));
-    const s = await api('/api/status');
+    $('statusText').textContent = '局域网模式已' + (on ? '开启' : '关闭') + '，正在确认监听状态…';
+    let s = null;
+    for (let i = 0; i < 16; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        s = await api('/api/ping', 5000);
+      } catch {}
+      if (s && !!s.lan === on) break;
+    }
+    logDiag('监听状态确认: lan=' + (s ? s.lan : 'unknown') + '（期望 ' + on + '）');
     if (s) renderStatus(s);
+    else logDiag('监听状态确认失败，请查看 logcat 的 [zhixue-node] 日志');
   } catch (err) {
     setBadge('err', '切换失败');
     $('statusText').textContent = '切换失败：' + err.message;
