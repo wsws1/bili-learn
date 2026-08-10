@@ -20,6 +20,7 @@ const navEl = document.getElementById('bottomnav');
 export const state = {
   user: null,
   route: null,
+  statusOk: false,
 };
 
 const NAV = [
@@ -91,8 +92,10 @@ async function refreshUser() {
   try {
     const s = await api.status();
     state.user = s.login;
+    state.statusOk = true;
   } catch {
-    state.user = { ok: false };
+    state.user = { ok: false, unknown: true };
+    state.statusOk = false;
   }
 }
 
@@ -145,8 +148,10 @@ async function route() {
     c.user = state.user;
   }
 
-  // 登录门禁
-  if (!state.user?.ok && r.name !== 'login') {
+  // 登录门禁：只有确认“未登录”（状态查询成功且返回未登录）才跳登录页；
+  // 状态查询失败（网络异常）时继续渲染页面，避免误判需要重新登录
+  const definitelyLoggedOut = state.user && state.user.ok === false && !state.user.unknown;
+  if (definitelyLoggedOut && r.name !== 'login') {
     location.replace('#/login');
     return;
   }

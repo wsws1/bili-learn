@@ -61,6 +61,7 @@ export default function renderPlayer(container, ctx, route) {
     doneKey: 'zhixue:done:' + bvid0,
     qualityHeight: Number(localStorage.getItem('zhixue:quality')) || 0,
     disposed: false,
+    seekRetries: 0,
   };
 
   container.innerHTML = `
@@ -326,8 +327,9 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   function destroyPlayer() {
-      state.pendingSeek = null;
-      state.seekApplied = true;
+        state.pendingSeek = null;
+        state.seekApplied = true;
+        state.seekRetries = 0;
       if (state.player) {
       try {
         if (state.play?.type === 'dash' && state.player.reset) state.player.reset();
@@ -419,39 +421,68 @@ export default function renderPlayer(container, ctx, route) {
         const r = await api.history(20, max, viewAt);
         if (r.code !== 0) break;
         const list = r.data?.list || [];
-        const found = list.find((h) => (h.history?.bvid || h.bvid) === state.bvid);
-        if (found && !found.is_finish && found.progress > 0 && found.duration && found.progress < found.duration - 3) {
-          state.pendingSeek = found.progress;
-          break;
-        }
+      const found = list.find((h) => (h.history?.bvid || h.bvid) === state.bvid);
+      if (found && !found.is_finish && found.progress > 0 && found.duration && found.progress < found.duration - 3) {
+        state.pendingSeek = found.progress;
+        console.log('[zhixue-web] 续播命中: bvid=' + state.bvid + ' 进度=' + found.progress + '/' + found.duration);
+        break;
+      }
         const c = r.data?.cursor || {};
         if (!c.max || !list.length) break;
         max = c.max;
         viewAt = c.view_at;
       }
     } catch {}
+    if (state.pendingSeek == null) console.log('[zhixue-web] 续播未命中: ' + state.bvid);
   }
 
   function trySeek() {
     if (state.disposed || state.pendingSeek == null || state.seekApplied) return;
-    if (!video.duration || !Number.isFinite(video.duration)) return;
+    if (!video.duration || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    // 等待可 seek 区间就绪（dash 初始化后才会出现），避免 seek 被复位到 0
+    const seekable = video.seekable && video.seekable.length;
+    if (!seekable) {
+      state.seekRetries += 1;
+      if (state.seekRetries < 30) {
+        setTimeout(trySeek, 250);
+        return;
+      }
+      state.pendingSeek = null;
+      state.seekApplied = true;
+      return;
+    }
     const t = state.pendingSeek;
     state.pendingSeek = null;
-    if (t > 3 && video.duration - t > 5) {
-      // 等 seek 完成后再播放，避免 dash 复位到 0
-      const onSeeked = () => {
-        if (state.disposed) return;
-        state.seekApplied = true;
-        ui.toast('已续播到 ' + ui.fmtDur(t));
-        if (video.paused) video.play().catch(() => {});
-      };
-      video.addEventListener('seeked', onSeeked, { once: true });
+    if (t > 3 && video.duration - t > 5) applySeek(t);
+    else state.seekApplied = true;
+  }
+
+  function applySeek(t) {
+    console.log('[zhixue-web] 续播执行 seek: ' + t + 's type=' + (state.play?.type || ''));
+    const doPlay = () => {
+      if (state.disposed || state.seekApplied) return;
+      state.seekApplied = true;
+      ui.toast('已续播到 ' + ui.fmtDur(t));
+      if (video.paused) video.play().catch(() => {});
+    };
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked);
+      doPlay();
+    };
+    video.addEventListener('seeked', onSeeked, { once: true });
+    try {
+      if (state.play?.type === 'dash' && state.player && typeof state.player.seek === 'function') {
+        state.player.seek(t);
+      } else {
+        video.currentTime = t;
+      }
+    } catch {
       try {
         video.currentTime = t;
       } catch {}
-    } else {
-      state.seekApplied = true;
     }
+    // 兜底：2.5 秒内未触发 seeked 也继续播放
+    setTimeout(doPlay, 2500);
   }
   video.addEventListener('loadedmetadata', trySeek);
   video.addEventListener('durationchange', trySeek);
