@@ -529,10 +529,9 @@ export default function renderPlayer(container, ctx, route) {
     loadPlayWithHeight();
   });
   const pipBtn = container.querySelector('#pipBtn');
-  // 画中画 JS API 仅桌面浏览器可用；Android/iOS 上 requestPictureInPicture 存在但不可用，
-  // 移动端改用手绘悬浮小窗（页面内固定角标），不依赖浏览器 API
+  // 浏览器原生画中画 API：桌面 Chrome 全支持；安卓 Chrome/Edge、Opera、新版 Samsung Internet 也已支持。
+  // 不支持的浏览器（如安卓 Firefox、安卓 WebView）不再自绘浮层，改为引导用户走浏览器自带入口。
   const pipSupported =
-    !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') &&
     typeof document.pictureInPictureEnabled === 'boolean' &&
     document.pictureInPictureEnabled &&
     typeof video.requestPictureInPicture === 'function';
@@ -579,48 +578,6 @@ export default function renderPlayer(container, ctx, route) {
   video.addEventListener('play', updatePipBtn);
   video.addEventListener('pause', updatePipBtn);
 
-  function startFloatPip() {
-    if (pipSession && pipSession.mode === 'float') return true;
-    if (video.paused) {
-      ui.toast('请先播放再开启小窗');
-      return false;
-    }
-    let host = document.getElementById('floatPipHost');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'floatPipHost';
-      host.style.cssText =
-        'position:fixed;right:10px;bottom:74px;width:min(48vw,280px);aspect-ratio:16/9;background:#000;' +
-        'border-radius:10px;overflow:hidden;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.35);';
-      host.innerHTML =
-        '<button id="floatPipClose" aria-label="关闭小窗" ' +
-        'style="position:absolute;top:6px;right:6px;z-index:5;width:30px;height:30px;border:none;border-radius:50%;' +
-        'background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:28px;cursor:pointer;text-align:center">×</button>';
-      document.body.appendChild(host);
-      host.querySelector('#floatPipClose').addEventListener('click', onPipLeave);
-    }
-    // 清掉可能残留的旧视频，再放入当前视频，并强制铺满小窗（避免只显示局部/黑边异常）
-    host.querySelectorAll('video').forEach((v) => v.remove());
-    host.appendChild(video);
-    video.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;z-index:1;background:#000;';
-    pipSession = { mode: 'float', state, video, player: state.player, playType: state.play?.type, hbTimer: state.hbTimer, report };
-    // 小窗暂停时停掉心跳，恢复播放再继续上报
-    pipSession.pauseFn = () => clearInterval(state.hbTimer);
-    pipSession.playFn = () => {
-      if (!pipSession) return;
-      clearInterval(state.hbTimer);
-      state.hbTimer = setInterval(() => report(false), 15000);
-    };
-    video.addEventListener('pause', pipSession.pauseFn);
-    video.addEventListener('play', pipSession.playFn);
-    ui.toast('小窗播放中，关闭小窗可回到本视频');
-    return true;
-  }
-
-  function enterFloatPip() {
-    if (startFloatPip()) go('home');
-  }
-
   pipBtn.addEventListener('click', async () => {
     // 应用内 WebView：先触发视频全屏，再进系统小窗（否则小窗会截取整页右上角）
     if (window.AndroidPip && typeof window.AndroidPip.supports === 'function' && window.AndroidPip.supports()) {
@@ -651,10 +608,11 @@ export default function renderPlayer(container, ctx, route) {
         await video.requestPictureInPicture();
         return;
       } catch (e) {
-        // 原生画中画不可用（如视频未就绪）：降级为悬浮小窗
+        console.warn('[zhixue-web] 浏览器画中画不可用：' + (e && e.message));
       }
     }
-    enterFloatPip();
+    // 浏览器不支持原生画中画：不自绘浮层，引导用户走浏览器自带入口
+    ui.toast('当前浏览器不支持小窗，请全屏播放后按 Home 键，或长按视频选择小窗');
   });
 
   // ---------- 收藏状态 ----------
@@ -973,11 +931,6 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   return () => {
-    // 悬浮小窗播放中：保持浮层继续播，不销毁
-    if (pipSession && pipSession.mode === 'float') {
-      console.log('[zhixue-web] 悬浮小窗（后台续播）: ' + state.bvid);
-      return;
-    }
     const inPip = document.pictureInPictureElement === video && !video.paused;
     if (inPip) {
       console.log('[zhixue-web] 小窗转移（后台续播）: ' + state.bvid);
