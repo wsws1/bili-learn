@@ -96,7 +96,7 @@ async function doRequest(path, url, options) {
 }
 
 function request(path, options = {}) {
-  const { method = 'GET', params, cacheMs = 0 } = options;
+  const { method = 'GET', params, cacheMs = 0, forceRefresh = false } = options;
   let url = path;
   if (params) {
     const sp = new URLSearchParams();
@@ -107,9 +107,12 @@ function request(path, options = {}) {
     if (qs) url += '?' + qs;
   }
   const key = cacheKey(method, url);
+  if (cacheMs > 0 && forceRefresh) respCache.delete(key);
   if (cacheMs > 0) {
-    const hit = respCache.get(key);
-    if (hit && Date.now() - hit.at < cacheMs) return Promise.resolve(hit.data);
+    if (!forceRefresh) {
+      const hit = respCache.get(key);
+      if (hit && Date.now() - hit.at < cacheMs) return Promise.resolve(hit.data);
+    }
   }
   return enqueue(() => doRequest(path, url, options));
 }
@@ -129,24 +132,27 @@ export const api = {
   play: (bvid, cid, qn = 80, codec = 'auto') => request('/api/play', { params: { bvid, cid, qn, codec }, timeoutMs: 10000 }),
   report: (body) => request('/api/play/report', { method: 'POST', body }),
 
-  favFolders: (mid) => request('/api/fav/folders', { params: { up_mid: mid }, cacheMs: 30000 }),
+  favFolders: (mid, opts = {}) =>
+    request('/api/fav/folders', { params: { up_mid: mid }, cacheMs: 30000, forceRefresh: !!opts.forceRefresh }),
   favList: (mediaId, pn = 1, keyword = '') => request('/api/fav/list', { params: { media_id: mediaId, pn, ps: 30, keyword } }),
   favCheck: (bvid) => request('/api/fav/check', { params: { bvid }, timeoutMs: 15000, retries: 0 }),
   favDeal: (rid, addIds = '', delIds = '') =>
     request('/api/fav/deal', { method: 'POST', body: { rid, add_media_ids: addIds, del_media_ids: delIds } }),
 
-  history: (ps = 20, max = '', viewAt = '') =>
-    request('/api/history', { params: { ps, max, view_at: viewAt }, timeoutMs: 15000, cacheMs: 30000 }),
+  history: (ps = 20, max = '', viewAt = '', opts = {}) =>
+    request('/api/history', { params: { ps, max, view_at: viewAt }, timeoutMs: 15000, cacheMs: 30000, forceRefresh: !!opts.forceRefresh }),
   historySearch: (keyword, max = '', viewAt = '') => request('/api/history', { params: { keyword, max, view_at: viewAt }, timeoutMs: 15000 }),
 
   followings: (mid, all = false, tagid = '') =>
     request('/api/followings', { params: { vmid: mid, all: all ? 1 : '', tagid }, timeoutMs: 30000, retries: 0 }),
   relationTags: () => request('/api/relation/tags'),
   user: (mid) => request('/api/user', { params: { mid } }),
-  dynamicsAll: (offset = '', time = '') =>
-    request('/api/dynamics/all', { params: { offset, time }, cacheMs: 30000 }),
-  dynamicsSpace: (mid, offset = '', time = '') => request('/api/dynamics/space', { params: { host_mid: mid, offset, time } }),
-  dynamicsUp: (mid, offset = '', time = '') => request('/api/dynamics/up', { params: { host_mid: mid, offset, time } }),
+  dynamicsAll: (offset = '', time = '', opts = {}) =>
+    request('/api/dynamics/all', { params: { offset, time }, cacheMs: 30000, forceRefresh: !!opts.forceRefresh }),
+  dynamicsSpace: (mid, offset = '', time = '', opts = {}) =>
+    request('/api/dynamics/space', { params: { host_mid: mid, offset, time }, cacheMs: 30000, forceRefresh: !!opts.forceRefresh }),
+  dynamicsUp: (mid, offset = '', time = '', opts = {}) =>
+    request('/api/dynamics/up', { params: { host_mid: mid, offset, time }, cacheMs: 30000, forceRefresh: !!opts.forceRefresh }),
 
   comments: (bvid, next = 0) => request('/api/comments', { params: { bvid, next } }),
   upload: (mid, pn = 1, ps = 20) => request('/api/upload', { params: { mid, pn, ps } }),

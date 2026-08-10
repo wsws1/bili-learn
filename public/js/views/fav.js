@@ -8,7 +8,7 @@ export default function renderFav(container, ctx, route) {
 
 function renderList(container, ctx) {
   const { api, ui, user, go, setTopbar } = ctx;
-  setTopbar({ title: '收藏夹', actions: [{ icon: 'refresh', label: '刷新', onClick: load }] });
+  setTopbar({ title: '收藏夹', actions: [{ icon: 'refresh', label: '刷新', onClick: () => load(true) }] });
   const allFolders = [];
   let showAll = false;
   const box = document.createElement('div');
@@ -59,11 +59,11 @@ function renderList(container, ctx) {
     }
   }
 
-  async function load() {
+  async function load(force = false) {
     container.querySelector(':scope > .state-box')?.remove();
     box.innerHTML = '';
     try {
-      const r = await api.favFolders(user?.mid);
+      const r = await api.favFolders(user?.mid, { forceRefresh: force });
       if (r.code !== 0) throw new Error(r.message || '收藏夹获取失败');
       const list = r.data?.list || [];
       allFolders.length = 0;

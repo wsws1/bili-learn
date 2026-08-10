@@ -7,7 +7,20 @@ export default function renderFollow(container, ctx) {
   setTopbar({
     title: '关注更新',
     actions: [
-      { icon: 'refresh', label: '刷新', onClick: () => { state.dyn = []; state.dynOffset = ''; state.dynTime = ''; loadDyn(true); } },
+      {
+        icon: 'refresh',
+        label: '刷新',
+        onClick: () => {
+          state.dyn = [];
+          state.dynOffset = '';
+          state.dynTime = '';
+          state.spItems = [];
+          state.spOffset = '';
+          state.spTime = '';
+          state.spHasMore = false;
+          loadDyn(true, true);
+        },
+      },
       {
         html: `<label class="unseen-pill top">只看更新<input id="unseenToggle" type="checkbox" checked><i class="mini-track"></i></label>`,
         label: '只看更新',
@@ -272,13 +285,15 @@ export default function renderFollow(container, ctx) {
     moreBtn.classList.toggle('hidden', !(state.locked ? state.spHasMore : state.dynHasMore));
   }
 
-  async function loadDyn(replace = false) {
+  async function loadDyn(replace = false, force = false) {
     const locked = state.locked;
     const params = locked
       ? { mid: locked.mid, offset: state.spOffset, time: state.spTime }
       : { offset: state.dynOffset, time: state.dynTime };
     try {
-      const r = locked ? await api.dynamicsUp(params.mid, params.offset, params.time) : await api.dynamicsAll(params.offset, params.time);
+      const r = locked
+        ? await api.dynamicsUp(params.mid, params.offset, params.time, { forceRefresh: force })
+        : await api.dynamicsAll(params.offset, params.time, { forceRefresh: force });
       if (!r.ok) throw new Error(r.message || '动态获取失败');
       if (locked) {
         // 查看该 UP 动态 = B 站服务端已读机制；本地同步清零该 UP 的未看

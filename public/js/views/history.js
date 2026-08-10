@@ -2,7 +2,7 @@
 export default function renderHistory(container, ctx) {
   const { api, ui, go, setTopbar, showNav } = ctx;
   showNav(true);
-  setTopbar({ title: '历史记录', actions: [{ icon: 'refresh', label: '刷新', onClick: () => { state.max = ''; state.viewAt = ''; load(true); } }] });
+  setTopbar({ title: '历史记录', actions: [{ icon: 'refresh', label: '刷新', onClick: () => { state.max = ''; state.viewAt = ''; load(true, true); } }] });
 
   const state = { max: '', viewAt: '', keyword: '', items: [], hasMore: false, hiddenByImmerse: 0 };
 
@@ -32,14 +32,14 @@ export default function renderHistory(container, ctx) {
     finished: !!h.is_finish,
   });
 
-  async function load(replace) {
+  async function load(replace, force = false) {
     if (replace) histBox.innerHTML = '';
     if (!histBox.children.length) histBox.appendChild(ui.loadBox('加载历史记录…'));
     moreBtn.classList.add('hidden');
     try {
-      const r = state.keyword
-        ? await api.historySearch(state.keyword, state.max, state.viewAt)
-        : await api.history(20, state.max, state.viewAt);
+    const r = state.keyword
+      ? await api.historySearch(state.keyword, state.max, state.viewAt)
+      : await api.history(20, state.max, state.viewAt, { forceRefresh: force });
       if (r.code !== 0) throw new Error(r.message || '历史记录获取失败');
       const raw = r.data?.list || r.items || [];
       const items = raw.map(norm);

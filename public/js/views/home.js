@@ -17,6 +17,7 @@ export default function renderHome(container, ctx) {
         <div class="h">${greet}，${ui.esc(user?.uname || '同学')}</div>
         <div class="s">专注学习 · 无推荐流</div>
       </div>
+      <button id="refreshBtn" class="icon-btn" aria-label="刷新">${ui.icon('refresh', 19)}</button>
       <button id="logoutBtn" class="icon-btn" aria-label="退出登录">${ui.icon('logout', 19)}</button>
     </div>
 
@@ -45,6 +46,11 @@ export default function renderHome(container, ctx) {
 
   container.querySelector('#avatarBtn').addEventListener('click', () => go('me'));
   container.querySelector('#searchBar').addEventListener('click', () => go('search'));
+  container.querySelector('#refreshBtn').addEventListener('click', () => {
+    loadResume(true);
+    loadDyn(true);
+    loadFavs(true);
+  });
   container.querySelector('#logoutBtn').addEventListener('click', async () => {
     if (!confirm('确认退出登录？本地 Cookie 将被清除。')) return;
     try {
@@ -59,10 +65,10 @@ export default function renderHome(container, ctx) {
   const favBox = container.querySelector('#favBox');
 
   // 继续学习：取历史中第一条未看完（受沉浸模式过滤）
-  function loadResume() {
+  function loadResume(force = false) {
   resumeBox.innerHTML = '';
   resumeBox.appendChild(ui.loadBox('加载中…'));
-  api.history(10).then((r) => {
+  api.history(10, '', '', { forceRefresh: force }).then((r) => {
     resumeBox.innerHTML = '';
     if (r.code !== 0) throw new Error(r.message || '历史记录获取失败');
     const list = (r.data?.list || []).map((h) => ({
@@ -108,10 +114,10 @@ export default function renderHome(container, ctx) {
   loadResume();
 
   // 关注更新预览（受沉浸模式关键词过滤）
-  function loadDyn() {
+  function loadDyn(force = false) {
   dynBox.innerHTML = '';
   dynBox.appendChild(ui.loadBox('加载中…'));
-  api.dynamicsAll().then((r) => {
+  api.dynamicsAll('', '', { forceRefresh: force }).then((r) => {
     dynBox.innerHTML = '';
     if (!r.ok) throw new Error(r.message || '动态获取失败');
     const all = r.items.filter(ui.passImmersion);
@@ -169,10 +175,10 @@ export default function renderHome(container, ctx) {
   }
 
   let favData = [];
-  function loadFavs() {
+  function loadFavs(force = false) {
   favBox.innerHTML = '';
   favBox.appendChild(ui.loadBox('加载中…'));
-  api.favFolders(user?.mid).then((r) => {
+  api.favFolders(user?.mid, { forceRefresh: force }).then((r) => {
     favBox.innerHTML = '';
     if (r.code !== 0) throw new Error(r.message || '收藏夹获取失败');
     const list = r.data?.list || [];
