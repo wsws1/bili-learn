@@ -173,7 +173,7 @@ export default function renderPlayer(container, ctx, route) {
       fetchResume();
     } catch (e) {
       vLoading.classList.add('hidden');
-      showError(e.message);
+      showError(e.message, () => loadInfo());
     }
   }
 
@@ -222,7 +222,7 @@ export default function renderPlayer(container, ctx, route) {
       startHeartbeat();
     } catch (e) {
       vLoading.classList.add('hidden');
-      showError(e.message);
+      showError(e.message, () => loadPlay());
     }
   }
 
@@ -299,7 +299,7 @@ export default function renderPlayer(container, ctx, route) {
       vLoading.classList.add('hidden');
     } catch (e) {
       vLoading.classList.add('hidden');
-      showError(e.message);
+      showError(e.message, () => loadPlayWithHeight());
     }
   }
 
@@ -319,7 +319,7 @@ export default function renderPlayer(container, ctx, route) {
       vLoading.classList.add('hidden');
     } catch (e) {
       vLoading.classList.add('hidden');
-      showError(e.message);
+      showError(e.message, () => loadPlayWithCodec(codec));
     }
   }
 
@@ -335,10 +335,17 @@ export default function renderPlayer(container, ctx, route) {
     video.load();
   }
 
-  function showError(msg) {
-    vError.innerHTML = `${ui.esc(msg)}<br><button class="btn" style="margin-top:10px" onclick="location.reload()">重新加载</button>`;
-    vError.classList.remove('hidden');
-  }
+  function showError(msg, retry) {
+      vError.innerHTML = `${ui.esc(msg)}<br>` + (retry ? '<button class="btn" style="margin-top:10px">重试</button>' : '');
+      vError.classList.remove('hidden');
+      const btn = vError.querySelector('button');
+      if (btn && retry) {
+        btn.addEventListener('click', () => {
+          vError.classList.add('hidden');
+          retry();
+        });
+      }
+    }
 
   // ---------- 切换视频（分P / 合集集数） ----------
   function switchVideo(bvid2, cid2) {

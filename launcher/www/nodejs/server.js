@@ -637,26 +637,34 @@ var FOLLOW_TTL = 5 * 60 * 1e3;
 async function getAllFollowings(vmid, tagid = "", onAbort) {
   const key = tagid || "all";
   if (followCache.key === key && followCache.data && Date.now() - followCache.at < FOLLOW_TTL) return followCache.data;
-  const out = [];
-  let total = 0;
-  for (let page = 1; page <= 20; page++) {
-    if (onAbort && onAbort()) {
-      console.log("[zhixue-node] followings \u5BA2\u6237\u7AEF\u5DF2\u65AD\u5F00\uFF0C\u505C\u6B62\u62C9\u53D6 page=" + page + " \u5DF2\u83B7\u53D6=" + out.length);
-      break;
-    }
-    const r = await biliFetch("/x/relation/followings", { params: { vmid, pn: page, ps: 50, order: "desc", ...tagid ? { tagid } : {} } });
-    const d = r.json?.data;
-    if (r.json?.code !== 0 || !d) {
-      console.log("[zhixue-node] followings \u62C9\u53D6\u4E2D\u65AD: page=" + page + " code=" + r.json?.code + " msg=" + (r.json?.message || "") + " \u5DF2\u83B7\u53D6=" + out.length + "/" + total);
-      break;
-    }
-    total = d.total || total;
-    out.push(...(d.list || []).map(normUP));
-    if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
-    if (page < 20) await new Promise((r2) => setTimeout(r2, 120));
+  const paramsOf = (pn) => ({ vmid, pn, ps: 50, order: "desc", ...tagid ? { tagid } : {} });
+  const page1 = await biliFetch("/x/relation/followings", { params: paramsOf(1) });
+  const d1 = page1.json?.data;
+  if (page1.json?.code !== 0 || !d1) {
+    console.log("[zhixue-node] followings \u9996\u9875\u5931\u8D25: code=" + page1.json?.code + " msg=" + (page1.json?.message || ""));
+    return { list: [], total: 0, pages: 0 };
   }
-  console.log("[zhixue-node] followings \u5B8C\u6210: total=" + total + " \u5B9E\u9645=" + out.length + " tagid=" + (tagid || "all"));
-  const data = { list: out, total, pages: Math.ceil(out.length / 50) };
+  const total = d1.total || 0;
+  const totalPages = Math.min(20, Math.ceil(total / 50));
+  const out = [...(d1.list || []).map(normUP)];
+  const rest = [];
+  const pageNums = [];
+  for (let p = 2; p <= totalPages; p++) pageNums.push(p);
+  await mapLimit(pageNums, 4, async (page) => {
+    if (onAbort && onAbort()) return;
+    const r = await biliFetch("/x/relation/followings", { params: paramsOf(page) });
+    const d = r.json?.data;
+    if (r.json?.code === 0 && d?.list) rest.push({ page, list: d.list.map(normUP) });
+    else console.log("[zhixue-node] followings \u7B2C " + page + " \u9875\u5931\u8D25: code=" + r.json?.code + " msg=" + (r.json?.message || ""));
+  });
+  rest.sort((a, b) => a.page - b.page);
+  for (const r of rest) out.push(...r.list);
+  const final = out.slice(0, total);
+  if (final.length < total) {
+    console.log("[zhixue-node] followings \u4E0D\u5B8C\u6574: total=" + total + " \u5B9E\u9645=" + final.length);
+  }
+  console.log("[zhixue-node] followings \u5B8C\u6210: total=" + total + " \u5B9E\u9645=" + final.length + " tagid=" + (tagid || "all"));
+  const data = { list: final, total, pages: Math.ceil(final.length / 50) };
   if (total > 0 && out.length >= total) followCache = { key, data, at: Date.now() };
   return data;
 }

@@ -642,26 +642,35 @@ const FOLLOW_TTL = 5 * 60 * 1000;
 async function getAllFollowings(vmid, tagid = '', onAbort) {
   const key = tagid || 'all';
   if (followCache.key === key && followCache.data && Date.now() - followCache.at < FOLLOW_TTL) return followCache.data;
-  const out = [];
-  let total = 0;
-  for (let page = 1; page <= 20; page++) {
-    if (onAbort && onAbort()) {
-      console.log('[zhixue-node] followings 客户端已断开，停止拉取 page=' + page + ' 已获取=' + out.length);
-      break;
-    }
-    const r = await biliFetch('/x/relation/followings', { params: { vmid, pn: page, ps: 50, order: 'desc', ...(tagid ? { tagid } : {}) } });
-    const d = r.json?.data;
-    if (r.json?.code !== 0 || !d) {
-      console.log('[zhixue-node] followings 拉取中断: page=' + page + ' code=' + r.json?.code + ' msg=' + (r.json?.message || '') + ' 已获取=' + out.length + '/' + total);
-      break;
-    }
-    total = d.total || total;
-    out.push(...(d.list || []).map(normUP));
-    if (!d.list?.length || d.list.length < 50 || out.length >= total) break;
-    if (page < 20) await new Promise((r2) => setTimeout(r2, 120));
+  const paramsOf = (pn) => ({ vmid, pn, ps: 50, order: 'desc', ...(tagid ? { tagid } : {}) });
+  const page1 = await biliFetch('/x/relation/followings', { params: paramsOf(1) });
+  const d1 = page1.json?.data;
+  if (page1.json?.code !== 0 || !d1) {
+    console.log('[zhixue-node] followings 首页失败: code=' + page1.json?.code + ' msg=' + (page1.json?.message || ''));
+    return { list: [], total: 0, pages: 0 };
   }
-  console.log('[zhixue-node] followings 完成: total=' + total + ' 实际=' + out.length + ' tagid=' + (tagid || 'all'));
-  const data = { list: out, total, pages: Math.ceil(out.length / 50) };
+  const total = d1.total || 0;
+  const totalPages = Math.min(20, Math.ceil(total / 50));
+  const out = [...(d1.list || []).map(normUP)];
+  const rest = [];
+  const pageNums = [];
+  for (let p = 2; p <= totalPages; p++) pageNums.push(p);
+  // 剩余页并发拉取（限 4 路），手机网络下总耗时从 20 次串行降到约 1/4
+  await mapLimit(pageNums, 4, async (page) => {
+    if (onAbort && onAbort()) return;
+    const r = await biliFetch('/x/relation/followings', { params: paramsOf(page) });
+    const d = r.json?.data;
+    if (r.json?.code === 0 && d?.list) rest.push({ page, list: d.list.map(normUP) });
+    else console.log('[zhixue-node] followings 第 ' + page + ' 页失败: code=' + r.json?.code + ' msg=' + (r.json?.message || ''));
+  });
+  rest.sort((a, b) => a.page - b.page);
+  for (const r of rest) out.push(...r.list);
+  const final = out.slice(0, total);
+  if (final.length < total) {
+    console.log('[zhixue-node] followings 不完整: total=' + total + ' 实际=' + final.length);
+  }
+  console.log('[zhixue-node] followings 完成: total=' + total + ' 实际=' + final.length + ' tagid=' + (tagid || 'all'));
+  const data = { list: final, total, pages: Math.ceil(final.length / 50) };
   // 只有拉全了才缓存（避免把不完整结果缓存 5 分钟）
   if (total > 0 && out.length >= total) followCache = { key, data, at: Date.now() };
   return data;
