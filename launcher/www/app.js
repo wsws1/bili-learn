@@ -18,15 +18,11 @@ function setBadge(state, text) {
 function renderStatus(s) {
   if (s && s.ok) {
     setBadge('ok', '运行中');
-    $('statusText').textContent = '本地服务运行正常，可以打开网页版开始学习。';
+    $('statusText').textContent = '本地服务运行正常，打开网页版后完成登录即可使用。';
     $('portText').textContent = s.port;
     $('nodeText').textContent = s.node;
     $('openBtn').disabled = false;
     renderLan(s);
-    // 登录态属于次要信息，额外查一次（失败不阻塞）
-    api('/api/status', 8000).then((st) => {
-      if (st && st.login && !st.login.ok) setBadge('err', '未登录');
-    }).catch(() => {});
   } else {
     setBadge('err', '异常');
     $('statusText').textContent = '服务尚未就绪，请稍候…';
