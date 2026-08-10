@@ -126,7 +126,7 @@ function encWbiQuery(params, imgKey, subKey) {
 async function ensureWbiKeys(force = false) {
   const AGE_MS = 12 * 60 * 60 * 1000;
   if (!force && wbiCache.imgKey && Date.now() - wbiCache.fetchedAt < AGE_MS) return wbiCache;
-  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders() });
+  const res = await fetch(`${BILI_API}/x/web-interface/nav`, { headers: baseHeaders(), signal: AbortSignal.timeout(6000) });
   const j = await res.json();
   const img = j?.data?.wbi_img?.img_url || '';
   const sub = j?.data?.wbi_img?.sub_url || '';
@@ -162,7 +162,7 @@ function netDetail(e) {
 async function ensureBuvid() {
   if (cookieNames(cookieStore.cookies).includes('buvid3')) return;
   try {
-    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders() });
+    const res = await fetch(`${BILI_API}/x/frontend/finger/spi`, { headers: baseHeaders(), signal: AbortSignal.timeout(6000) });
     const j = await res.json();
     if (j.code === 0 && j.data?.b_3) {
       cookieStore.cookies = mergeCookies(cookieStore.cookies, `buvid3=${j.data.b_3}; buvid4=${j.data.b_4 || ''}`);
@@ -195,7 +195,7 @@ async function biliFetch(path, { params = {}, wbi = false, method = 'GET', form 
   const t0 = Date.now();
   let res;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(6000) });
   } catch (e) {
     return {
       json: { code: 'NETWORK', message: '无法连接 B 站 API：' + netDetail(e) + '。请检查网络或代理后重试。' },
@@ -522,6 +522,7 @@ async function qrGenerate() {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/generate`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
+      signal: AbortSignal.timeout(6000),
     });
     j = await res.json();
   } catch (e) {
@@ -541,6 +542,7 @@ async function fetchCookieChain(url) {
       method: 'GET',
       redirect: 'manual',
       headers: { 'User-Agent': UA, Referer: REFERER },
+      signal: AbortSignal.timeout(6000),
     });
     const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
     if (setCookies.length) {
@@ -559,6 +561,7 @@ async function qrPoll(key) {
     const res = await fetch(`${BILI_PASSPORT}/x/passport-login/web/qrcode/poll?qrcode_key=${encodeURIComponent(key)}`, {
       method: 'GET',
       headers: { 'User-Agent': UA, Referer: 'https://passport.bilibili.com/login', Accept: 'application/json' },
+      signal: AbortSignal.timeout(6000),
     });
     j = await res.json();
   } catch (e) {
@@ -707,6 +710,21 @@ async function readBody(req) {
   }
 }
 
+// 并发受限的 map：避免大量串行请求拖慢接口
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  const n = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
+}
+
 const favCheckCache = new Map(); // bvid -> { at, data }
 
 const server = http.createServer(async (req, res) => {
@@ -729,7 +747,7 @@ const server = http.createServer(async (req, res) => {
       if (req.headers.range) h.Range = req.headers.range;
       let up;
       try {
-        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(30000) });
+        up = await fetch(streamUrl, { headers: h, redirect: 'follow', signal: AbortSignal.timeout(6000) });
       } catch (e) {
         return sendJson(res, 502, { ok: false, error: '流代理请求失败：' + (e.name === 'TimeoutError' ? '上游超时' : e.message) });
       }
@@ -1065,11 +1083,12 @@ const server = http.createServer(async (req, res) => {
       if (!login.ok) return sendJson(res, 200, { ok: false, needsLogin: true, message: '未登录' });
       const foldersRes = await biliFetch('/x/v3/fav/folder/created/list-all', { params: { up_mid: login.mid, type: 0 } });
       const folders = foldersRes.json?.data?.list || [];
-      const out = await Promise.all(folders.map(async (f) => {
+      // 并行（限流 5 路）检查各收藏夹，避免 45 个收藏夹串行拖慢
+      const out = await mapLimit(folders, 5, async (f) => {
         const idsRes = await biliFetch('/x/v3/fav/resource/ids', { params: { media_id: f.id, platform: 'web' } });
         const ids = idsRes.json?.data || [];
         return { id: f.id, title: f.title, media_count: f.media_count, has: ids.some((x) => x.id === aid) };
-      }));
+      });
       const data = { ok: true, code: 0, bvid, aid, folders: out };
       favCheckCache.set(bvid, { at: Date.now(), data });
       return sendJson(res, 200, data);
@@ -1185,7 +1204,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const up = await fetch(`${BILI_API}/x/frontend/finger/spi`, {
           headers: baseHeaders(),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(5000),
         });
         const j = await up.json();
         console.log('[zhixue-node] netcheck: http=' + up.status + ' code=' + j.code + ' time=' + (Date.now() - t0) + 'ms');

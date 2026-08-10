@@ -1,6 +1,6 @@
 // 知学前端 API 客户端：只调本地 /api 代理
 async function request(path, options = {}) {
-  const { method = 'GET', params, body, timeoutMs = 30000 } = options;
+  const { method = 'GET', params, body, timeoutMs = 6000 } = options;
   let url = path;
   if (params) {
     const sp = new URLSearchParams();
@@ -53,7 +53,7 @@ export const api = {
 
   favFolders: (mid) => request('/api/fav/folders', { params: { up_mid: mid } }),
   favList: (mediaId, pn = 1, keyword = '') => request('/api/fav/list', { params: { media_id: mediaId, pn, ps: 30, keyword } }),
-  favCheck: (bvid) => request('/api/fav/check', { params: { bvid } }),
+  favCheck: (bvid) => request('/api/fav/check', { params: { bvid }, timeoutMs: 15000 }),
   favDeal: (rid, addIds = '', delIds = '') =>
     request('/api/fav/deal', { method: 'POST', body: { rid, add_media_ids: addIds, del_media_ids: delIds } }),
 
