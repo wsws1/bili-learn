@@ -2,6 +2,21 @@
 const API_BASE = window.BF_NATIVE ? 'http://127.0.0.1:3210' : '';
 const $ = (id) => document.getElementById(id);
 
+const diagLines = [];
+function logDiag(msg) {
+  diagLines.push('[' + new Date().toLocaleTimeString() + '] ' + msg);
+  const el = $('diag');
+  if (el) {
+    el.textContent = diagLines.join('\n');
+    el.hidden = false;
+    el.scrollTop = el.scrollHeight;
+  }
+  console.log('[zhixue-launcher] ' + msg);
+}
+
+window.addEventListener('error', (e) => logDiag('页面错误: ' + (e.message || e.error)));
+window.addEventListener('unhandledrejection', (e) => logDiag('未处理异常: ' + (e.reason && e.reason.message || e.reason)));
+
 async function api(path, timeoutMs = 8000) {
   const res = await fetch(API_BASE + path, { signal: AbortSignal.timeout(timeoutMs) });
   const j = await res.json();
@@ -43,29 +58,39 @@ function renderLan(s) {
 }
 
 async function boot() {
+  logDiag('boot: native=' + !!window.BF_NATIVE + ' apiBase=' + (API_BASE || '(same-origin)'));
   if (window.BF_NATIVE) $('bootSplash').hidden = false;
   const deadline = Date.now() + 60000;
   let status = null;
+  let attempts = 0;
   while (Date.now() < deadline) {
+    attempts += 1;
     try {
       status = await api('/api/ping');
       if (status && status.ok) break;
+      logDiag('探测 #' + attempts + ': 未就绪');
     } catch (e) {
-      // 服务尚未就绪
+      logDiag('探测 #' + attempts + ' 失败: ' + e.message);
     }
     await new Promise((r) => setTimeout(r, 400));
   }
   $('bootSplash').hidden = true;
-  if (status) renderStatus(status);
-  else {
+  if (status && status.ok) {
+    logDiag('探测成功（第 ' + attempts + ' 次），服务运行中');
+    renderStatus(status);
+    $('retryBtn').hidden = true;
+  } else {
     setBadge('err', '启动失败');
-    $('statusText').textContent = '本地服务 60 秒内未就绪，请重启应用；若反复失败请在手机上查看应用日志。';
+    $('statusText').textContent = '本地服务 60 秒内未就绪。请点「重试启动」，或查看下方诊断信息。';
+    $('retryBtn').hidden = false;
+    logDiag('启动超时：60 秒内未就绪');
   }
 }
 
 $('lanToggle').addEventListener('change', async (e) => {
   const on = e.target.checked;
   try {
+    logDiag('切换局域网: ' + (on ? 'on' : 'off'));
     await window.bridgeSend('set-lan', on ? 'on' : 'off');
     setBadge('ok', '已切换');
     $('statusText').textContent = '局域网模式已' + (on ? '开启' : '关闭') + '，正在重启监听…';
@@ -75,12 +100,19 @@ $('lanToggle').addEventListener('change', async (e) => {
   } catch (err) {
     setBadge('err', '切换失败');
     $('statusText').textContent = '切换失败：' + err.message;
+    logDiag('切换失败: ' + err.message);
   }
 });
 
 $('openBtn').addEventListener('click', () => {
   const base = API_BASE || 'http://127.0.0.1:3210';
+  logDiag('打开网页版: ' + base);
   window.openWeb(base);
+});
+
+$('retryBtn').addEventListener('click', () => {
+  diagLines.length = 0;
+  boot();
 });
 
 boot();

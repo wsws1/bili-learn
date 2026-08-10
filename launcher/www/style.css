@@ -216,6 +216,27 @@ h2 {
   opacity: .5;
 }
 
+.primary.ghost {
+  background: var(--surface2);
+  color: var(--text);
+  margin-top: 12px;
+}
+
+.diag {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 .splash {
   position: fixed;
   inset: 0;

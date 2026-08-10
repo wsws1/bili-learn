@@ -1,4 +1,5 @@
 // 知学 Android 内嵌后端（由 server.mjs 打包，勿手改）
+console.log("[zhixue-node] bundle loaded, android=" + (process.env.BF_ANDROID || "0") + ", publicDir=" + (process.env.BF_PUBLIC_DIR || "(unset)"));
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
