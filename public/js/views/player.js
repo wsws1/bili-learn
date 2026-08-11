@@ -79,15 +79,6 @@ export default function renderPlayer(container, ctx, route) {
         <div id="vError" class="load-error hidden"></div>
         <div id="vTapPlay" class="load-error hidden">点击播放</div>
       </div>
-      <div class="seek-row">
-        <span id="curTime" class="seek-time">0:00</span>
-        <div id="seekTrack" class="seek-track" aria-label="进度">
-          <div class="seek-base"></div>
-          <div id="seekFill" class="seek-fill"></div>
-          <div id="seekThumb" class="seek-thumb"></div>
-        </div>
-        <span id="durTime" class="seek-time">0:00</span>
-      </div>
       <div class="player-ctrl">
         <select id="qualitySel" class="select hidden" aria-label="清晰度"></select>
         <select id="speedSel" class="select" aria-label="播放速度">
@@ -100,7 +91,7 @@ export default function renderPlayer(container, ctx, route) {
         </select>
         <div class="spacer"></div>
         <button id="fsBtn" class="icon-btn" aria-label="全屏" title="全屏">${ui.icon('maximize', 18)}</button>
-        <button id="pipBtn" class="icon-btn" aria-label="画中画" title="画中画">${ui.icon('maximize', 18)}</button>
+        <button id="pipBtn" class="icon-btn" aria-label="画中画" title="画中画">${ui.icon('pip', 18)}</button>
       </div>
       <div id="codecRow" class="codec-chips hidden" style="margin-top:8px"></div>
     </div>
@@ -633,84 +624,7 @@ export default function renderPlayer(container, ctx, route) {
     ui.toast('当前浏览器不支持小窗，请全屏播放后按 Home 键，或长按视频选择小窗');
   });
 
-  // ---------- 自定义进度条：拖动 seek（普通/全屏均可用） ----------
-  const curTimeEl = container.querySelector('#curTime');
-  const durTimeEl = container.querySelector('#durTime');
-  const seekTrack = container.querySelector('#seekTrack');
-  const seekFill = container.querySelector('#seekFill');
-  const seekThumb = container.querySelector('#seekThumb');
-  let seeking = false;
-
-  function fmtT(s) {
-    if (!isFinite(s) || s < 0) s = 0;
-    const m = Math.floor(s / 60);
-    const ss = Math.floor(s % 60);
-    return m + ':' + String(ss).padStart(2, '0');
-  }
-
-  function renderSeek(t) {
-    const d = video.duration || 0;
-    const pct = d > 0 ? Math.min(100, Math.max(0, (t / d) * 100)) : 0;
-    seekFill.style.width = pct + '%';
-    seekThumb.style.left = pct + '%';
-    curTimeEl.textContent = fmtT(t);
-    if (d > 0) durTimeEl.textContent = fmtT(d);
-  }
-
-  function tFromClientX(clientX) {
-    const r = seekTrack.getBoundingClientRect();
-    if (!r.width) return 0;
-    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    return ratio * (video.duration || 0);
-  }
-
-  function commitSeek(t) {
-    const d = video.duration || 0;
-    if (!d || !isFinite(d)) return;
-    t = Math.max(0, Math.min(t, d));
-    try {
-      if (state.play?.type === 'dash' && state.player && typeof state.player.seek === 'function') {
-        state.player.seek(t);
-      } else {
-        video.currentTime = t;
-      }
-    } catch (e) {}
-  }
-
-  seekTrack.addEventListener('pointerdown', (e) => {
-    if (!video.duration || !isFinite(video.duration)) return;
-    e.preventDefault();
-    seeking = true;
-    try {
-      seekTrack.setPointerCapture(e.pointerId);
-    } catch {}
-    renderSeek(tFromClientX(e.clientX));
-  });
-  seekTrack.addEventListener('pointermove', (e) => {
-    if (!seeking) return;
-    renderSeek(tFromClientX(e.clientX));
-  });
-  function endSeek(e) {
-    if (!seeking) return;
-    seeking = false;
-    try {
-      if (seekTrack.hasPointerCapture && e.pointerId != null) seekTrack.releasePointerCapture(e.pointerId);
-    } catch {}
-    commitSeek(tFromClientX(e.clientX));
-  }
-  seekTrack.addEventListener('pointerup', endSeek);
-  seekTrack.addEventListener('pointercancel', endSeek);
-
-  video.addEventListener('loadedmetadata', () => renderSeek(video.currentTime || 0));
-  video.addEventListener('durationchange', () => renderSeek(video.currentTime || 0));
-  video.addEventListener('timeupdate', () => {
-    if (!seeking) renderSeek(video.currentTime || 0);
-  });
-  video.addEventListener('seeked', () => {
-    if (!seeking) renderSeek(video.currentTime || 0);
-  });
-
-  // ---------- 全屏：全屏整个播放器容器（保留自定义进度条/控制条） ----------
+  // ---------- 全屏：全屏整个播放器容器（保留控制条） ----------
   const fsBtn = container.querySelector('#fsBtn');
   function updateFsBtn() {
     if (fsBtn) fsBtn.innerHTML = ui.icon(document.fullscreenElement ? 'minimize' : 'maximize', 18);
@@ -723,6 +637,66 @@ export default function renderPlayer(container, ctx, route) {
     }
   });
   document.addEventListener('fullscreenchange', updateFsBtn);
+
+  // ---------- 手机/平板：在视频表面横向滑动调整进度（滑动过程实时预览帧） ----------
+  function seekTo(t) {
+    const d = video.duration || 0;
+    if (!d || !isFinite(d)) return;
+    t = Math.max(0, Math.min(t, d));
+    try {
+      if (state.play?.type === 'dash' && state.player && typeof state.player.seek === 'function') {
+        state.player.seek(t);
+      } else {
+        video.currentTime = t;
+      }
+    } catch (e) {}
+  }
+
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+  if (isTouchDevice) {
+    let g = null;
+    video.addEventListener('touchstart', (e) => {
+      const d = video.duration || 0;
+      if (!d || !isFinite(d) || e.touches.length !== 1) return;
+      const r = video.getBoundingClientRect();
+      const t0 = e.touches[0];
+      // 避开底部约 28% 的原生控件区域（那里是原生进度条/播放按钮）
+      if (r.height > 0 && t0.clientY - r.top > r.height * 0.72) return;
+      g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false };
+    }, { passive: true });
+    video.addEventListener('touchmove', (e) => {
+      if (!g || e.touches.length !== 1) return;
+      const t0 = e.touches[0];
+      const dx = t0.clientX - g.startX;
+      if (!g.active && Math.abs(dx) < 10) return;
+      g.active = true;
+      if (dx !== 0) e.preventDefault();
+      const r = video.getBoundingClientRect();
+      const d = video.duration || 0;
+      const target = Math.max(0, Math.min(d, g.startTime + (dx / Math.max(1, r.width)) * d));
+      const now = performance.now();
+      // 节流：约 70ms 一次，滑动时实时跳帧预览
+      if (now - g.lastApply > 70) {
+        g.lastApply = now;
+        seekTo(target);
+      }
+    }, { passive: false });
+    const endTouch = (e) => {
+      if (!g) return;
+      if (g.active) {
+        const ch = e.changedTouches && e.changedTouches[0];
+        if (ch) {
+          const r = video.getBoundingClientRect();
+          const d = video.duration || 0;
+          const target = Math.max(0, Math.min(d, g.startTime + ((ch.clientX - g.startX) / Math.max(1, r.width)) * d));
+          seekTo(target);
+        }
+      }
+      g = null;
+    };
+    video.addEventListener('touchend', endTouch);
+    video.addEventListener('touchcancel', endTouch);
+  }
 
   // ---------- 收藏状态 ----------
   async function loadFavState() {
