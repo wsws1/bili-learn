@@ -1,7 +1,10 @@
 package com.zhixue.launcher;
 
 import android.app.ActivityManager;
+import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Application;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -14,7 +17,42 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    private FloatingBall floatBall;
+    private static FloatingBall floatBall;
+    private static boolean lifecycleRegistered = false;
+    private static int fgCount = 0;
+
+    private final Application.ActivityLifecycleCallbacks lifecycleCb = new Application.ActivityLifecycleCallbacks() {
+        @Override
+        public void onActivityStarted(Activity a) {
+            fgCount++;
+            if (floatBall != null) floatBall.hide();
+        }
+
+        @Override
+        public void onActivityStopped(Activity a) {
+            fgCount = Math.max(0, fgCount - 1);
+            // 所有 Activity 都退到后台：若开启悬浮球保活且已授权，则显示常驻悬浮球
+            if (fgCount == 0 && floatBall != null
+                    && isFloatBallEnabled(a.getApplicationContext()) && floatBall.canShow()) {
+                floatBall.show();
+            }
+        }
+
+        @Override
+        public void onActivityCreated(Activity a, Bundle savedInstanceState) {}
+
+        @Override
+        public void onActivityResumed(Activity a) {}
+
+        @Override
+        public void onActivityPaused(Activity a) {}
+
+        @Override
+        public void onActivitySaveInstanceState(Activity a, Bundle outState) {}
+
+        @Override
+        public void onActivityDestroyed(Activity a) {}
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -34,33 +72,24 @@ public class MainActivity extends BridgeActivity {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
         }
         floatBall = new FloatingBall(this);
+        ensureLifecycle();
         checkBackgroundRestriction();
     }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
-        // 回到前台：隐藏悬浮球
-        if (floatBall != null) floatBall.hide();
+    private void ensureLifecycle() {
+        if (lifecycleRegistered) return;
+        lifecycleRegistered = true;
+        getApplication().registerActivityLifecycleCallbacks(lifecycleCb);
     }
 
-    @Override
-    protected void onStop() {
-        super.onStop();
-        // 退到后台：若开启悬浮球保活且已授权，则显示常驻悬浮球
-        if (floatBall != null && isFloatBallEnabled() && floatBall.canShow()) {
-            floatBall.show();
-        }
+    private static boolean isFloatBallEnabled(Context ctx) {
+        return ctx.getSharedPreferences("zhixue", Context.MODE_PRIVATE).getBoolean("float_ball", false);
     }
 
-    private boolean isFloatBallEnabled() {
-        return getSharedPreferences("zhixue", MODE_PRIVATE).getBoolean("float_ball", false);
-    }
-
-    private void setFloatBallEnabled(boolean on) {
-        getSharedPreferences("zhixue", MODE_PRIVATE).edit().putBoolean("float_ball", on).apply();
-        KeepAliveLog.i(this, "float ball enabled=" + on
-                + " overlayPerm=" + (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)));
+    private static void setFloatBallEnabled(Context ctx, boolean on) {
+        ctx.getSharedPreferences("zhixue", Context.MODE_PRIVATE).edit().putBoolean("float_ball", on).apply();
+        KeepAliveLog.i(ctx, "float ball enabled=" + on
+                + " overlayPerm=" + (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(ctx)));
     }
 
     // 检测电池优化/后台限制，受限时引导用户去系统设置（自启动开关是否出现由 ROM 决定，无法代码控制）
@@ -178,12 +207,12 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public void setFloatBall(boolean on) {
-            activity.setFloatBallEnabled(on);
+            MainActivity.setFloatBallEnabled(activity, on);
         }
 
         @JavascriptInterface
         public boolean isFloatBallEnabled() {
-            return activity.isFloatBallEnabled();
+            return MainActivity.isFloatBallEnabled(activity);
         }
     }
 }
