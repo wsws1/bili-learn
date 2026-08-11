@@ -8,7 +8,9 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import androidx.core.app.NotificationCompat;
 
@@ -21,6 +23,17 @@ public class KeepAliveService extends Service {
     private static final String CHANNEL_ID = "zhixue_keepalive";
     private static final int NOTIF_ID = 1;
     private long startTimeMs = 0;
+    private final Handler hbHandler = new Handler(Looper.getMainLooper());
+    private final Runnable hbTick = new Runnable() {
+        @Override
+        public void run() {
+            // 30 秒一次心跳：日志停在哪个时间戳，就是进程被冻结的时刻；
+            // 若先出现 onDestroy，则说明是前台服务被系统/厂商停掉。
+            KeepAliveLog.i(KeepAliveService.this,
+                    "tick alive=" + ((System.currentTimeMillis() - startTimeMs) / 1000) + "s");
+            hbHandler.postDelayed(this, 30000);
+        }
+    };
 
     @Override
     public void onCreate() {
@@ -29,6 +42,7 @@ public class KeepAliveService extends Service {
         KeepAliveLog.i(this, "onCreate sdk=" + Build.VERSION.SDK_INT
                 + " device=" + Build.MANUFACTURER + " " + Build.MODEL
                 + " android=" + Build.VERSION.RELEASE);
+        hbHandler.postDelayed(hbTick, 30000);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
@@ -74,6 +88,7 @@ public class KeepAliveService extends Service {
     @Override
     public void onDestroy() {
         long aliveSec = (System.currentTimeMillis() - startTimeMs) / 1000;
+        hbHandler.removeCallbacks(hbTick);
         KeepAliveLog.i(this, "onDestroy alive=" + aliveSec + "s");
         super.onDestroy();
     }
