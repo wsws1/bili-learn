@@ -154,6 +154,17 @@ $('logBtn').addEventListener('click', async () => {
   }
 });
 
+$('copyBtn').addEventListener('click', async () => {
+  const el = $('diag');
+  const text = el ? el.textContent : '';
+  try {
+    await navigator.clipboard.writeText(text);
+    logDiag('日志已复制到剪贴板');
+  } catch (err) {
+    logDiag('复制失败: ' + err.message + '，请手动长按选择复制');
+  }
+});
+
 // 外部访问地址检测：输入鸿蒙系统 WiFi IP，探测 http://IP:3210 是否可达
 $('lanForm').addEventListener('submit', async (e) => {
   e.preventDefault();
