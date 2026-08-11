@@ -36,15 +36,24 @@ public class MainActivity extends BridgeActivity {
 
     // 检测电池优化/后台限制，受限时引导用户去系统设置（自启动开关是否出现由 ROM 决定，无法代码控制）
     private void checkBackgroundRestriction() {
+        KeepAliveLog.i(this, "device=" + Build.MANUFACTURER + " " + Build.MODEL
+                + " android=" + Build.VERSION.RELEASE + " sdk=" + Build.VERSION.SDK_INT);
         boolean restricted = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) restricted = true;
+            boolean ignoring = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+            KeepAliveLog.i(this, "battery whitelist(ignore battery optimizations)=" + ignoring);
+            if (!ignoring) restricted = true;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
-            if (am != null && am.isBackgroundRestricted()) restricted = true;
+            boolean bgRestricted = am != null && am.isBackgroundRestricted();
+            KeepAliveLog.i(this, "isBackgroundRestricted=" + bgRestricted);
+            if (bgRestricted) restricted = true;
         }
+        KeepAliveLog.i(this, "restricted=" + restricted
+                + " notifPermission=" + (Build.VERSION.SDK_INT >= 33
+                ? (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) : true));
         if (!restricted) return;
 
         String m = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();

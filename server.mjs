@@ -964,7 +964,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/logs') {
-      return sendJson(res, 200, { ok: true, logs: logBuffer.slice(-200) });
+      const logs = logBuffer.slice(-200);
+      try {
+        // 合并 Android 侧保活诊断日志（KeepAliveLog 写入 files/nodejs/data/keepalive.log）
+        const ka = readFileSync(join(DATA_DIR, 'keepalive.log'), 'utf8');
+        if (ka) {
+          const kaLines = ka.trim().split('\n').filter(Boolean).map((l) => '[android] ' + l);
+          logs.push(...kaLines.slice(-60));
+        }
+      } catch {}
+      return sendJson(res, 200, { ok: true, logs });
     }
 
     if (req.method === 'GET' && path === '/api/status') {

@@ -926,7 +926,16 @@ var server = import_node_http.default.createServer(async (req, res) => {
       });
     }
     if (req.method === "GET" && path === "/api/logs") {
-      return sendJson(res, 200, { ok: true, logs: logBuffer.slice(-200) });
+      const logs = logBuffer.slice(-200);
+      try {
+        const ka = (0, import_node_fs.readFileSync)((0, import_node_path.join)(DATA_DIR, "keepalive.log"), "utf8");
+        if (ka) {
+          const kaLines = ka.trim().split("\n").filter(Boolean).map((l) => "[android] " + l);
+          logs.push(...kaLines.slice(-60));
+        }
+      } catch {
+      }
+      return sendJson(res, 200, { ok: true, logs });
     }
     if (req.method === "GET" && path === "/api/status") {
       const login = await checkLogin();

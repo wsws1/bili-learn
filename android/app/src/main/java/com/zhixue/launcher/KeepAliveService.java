@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
-import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
@@ -21,10 +20,15 @@ public class KeepAliveService extends Service {
 
     private static final String CHANNEL_ID = "zhixue_keepalive";
     private static final int NOTIF_ID = 1;
+    private long startTimeMs = 0;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        startTimeMs = System.currentTimeMillis();
+        KeepAliveLog.i(this, "onCreate sdk=" + Build.VERSION.SDK_INT
+                + " device=" + Build.MANUFACTURER + " " + Build.MODEL
+                + " android=" + Build.VERSION.RELEASE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
@@ -39,7 +43,8 @@ public class KeepAliveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i("zhixue", "keepalive onStartCommand startId=" + startId);
+        KeepAliveLog.i(this, "onStartCommand startId=" + startId
+                + " intent=" + (intent != null ? intent.getAction() : "null"));
         try {
             Intent launch = new Intent(this, MainActivity.class);
             PendingIntent pi = PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
@@ -55,11 +60,28 @@ public class KeepAliveService extends Service {
             } else {
                 startForeground(NOTIF_ID, notification);
             }
-            Log.i("zhixue", "keepalive foreground started");
+            KeepAliveLog.i(this, "startForeground OK type=specialUse");
         } catch (Exception e) {
-            Log.e("zhixue", "keepalive startForeground failed: " + e, e);
+            // startForeground 失败时若不停止，系统会因“未在 5 秒内调用
+            // startForeground()”抛 RemoteServiceException 杀进程，先停掉并留下日志
+            KeepAliveLog.e(this, "startForeground FAILED, stopping service", e);
+            stopSelf();
+            return START_NOT_STICKY;
         }
         return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        long aliveSec = (System.currentTimeMillis() - startTimeMs) / 1000;
+        KeepAliveLog.i(this, "onDestroy alive=" + aliveSec + "s");
+        super.onDestroy();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        KeepAliveLog.i(this, "onTaskRemoved（任务被划掉）");
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override
