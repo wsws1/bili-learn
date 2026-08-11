@@ -72,12 +72,21 @@ export default function renderPlayer(container, ctx, route) {
   };
 
   container.innerHTML = `
-    <div class="player-wrap">
+    <div class="player-wrap" id="playerWrap">
       <div class="video-box">
         <video id="video" controls playsinline preload="auto"></video>
         <div id="vLoading" class="loading">${ui.icon('refresh', 18)}加载视频中…</div>
         <div id="vError" class="load-error hidden"></div>
         <div id="vTapPlay" class="load-error hidden">点击播放</div>
+      </div>
+      <div class="seek-row">
+        <span id="curTime" class="seek-time">0:00</span>
+        <div id="seekTrack" class="seek-track" aria-label="进度">
+          <div class="seek-base"></div>
+          <div id="seekFill" class="seek-fill"></div>
+          <div id="seekThumb" class="seek-thumb"></div>
+        </div>
+        <span id="durTime" class="seek-time">0:00</span>
       </div>
       <div class="player-ctrl">
         <select id="qualitySel" class="select hidden" aria-label="清晰度"></select>
@@ -90,6 +99,7 @@ export default function renderPlayer(container, ctx, route) {
           <option value="2">2.0×</option>
         </select>
         <div class="spacer"></div>
+        <button id="fsBtn" class="icon-btn" aria-label="全屏" title="全屏">${ui.icon('maximize', 18)}</button>
         <button id="pipBtn" class="icon-btn" aria-label="画中画" title="画中画">${ui.icon('maximize', 18)}</button>
       </div>
       <div id="codecRow" class="codec-chips hidden" style="margin-top:8px"></div>
@@ -113,6 +123,7 @@ export default function renderPlayer(container, ctx, route) {
   `;
 
   const video = container.querySelector('#video');
+  const playerWrap = container.querySelector('#playerWrap');
   const vLoading = container.querySelector('#vLoading');
   const vError = container.querySelector('#vError');
   const vTapPlay = container.querySelector('#vTapPlay');
@@ -595,7 +606,7 @@ export default function renderPlayer(container, ctx, route) {
         if (document.fullscreenElement) {
           doEnter();
         } else {
-          await video.requestFullscreen();
+          await playerWrap.requestFullscreen();
           // 等全屏视频视图渲染一帧再进系统小窗，避免小窗截到整页画面（看起来像首页）
           await new Promise((r) => setTimeout(r, 150));
           doEnter();
@@ -621,6 +632,97 @@ export default function renderPlayer(container, ctx, route) {
     // 浏览器不支持原生画中画：不自绘浮层，引导用户走浏览器自带入口
     ui.toast('当前浏览器不支持小窗，请全屏播放后按 Home 键，或长按视频选择小窗');
   });
+
+  // ---------- 自定义进度条：拖动 seek（普通/全屏均可用） ----------
+  const curTimeEl = container.querySelector('#curTime');
+  const durTimeEl = container.querySelector('#durTime');
+  const seekTrack = container.querySelector('#seekTrack');
+  const seekFill = container.querySelector('#seekFill');
+  const seekThumb = container.querySelector('#seekThumb');
+  let seeking = false;
+
+  function fmtT(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60);
+    return m + ':' + String(ss).padStart(2, '0');
+  }
+
+  function renderSeek(t) {
+    const d = video.duration || 0;
+    const pct = d > 0 ? Math.min(100, Math.max(0, (t / d) * 100)) : 0;
+    seekFill.style.width = pct + '%';
+    seekThumb.style.left = pct + '%';
+    curTimeEl.textContent = fmtT(t);
+    if (d > 0) durTimeEl.textContent = fmtT(d);
+  }
+
+  function tFromClientX(clientX) {
+    const r = seekTrack.getBoundingClientRect();
+    if (!r.width) return 0;
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    return ratio * (video.duration || 0);
+  }
+
+  function commitSeek(t) {
+    const d = video.duration || 0;
+    if (!d || !isFinite(d)) return;
+    t = Math.max(0, Math.min(t, d));
+    try {
+      if (state.play?.type === 'dash' && state.player && typeof state.player.seek === 'function') {
+        state.player.seek(t);
+      } else {
+        video.currentTime = t;
+      }
+    } catch (e) {}
+  }
+
+  seekTrack.addEventListener('pointerdown', (e) => {
+    if (!video.duration || !isFinite(video.duration)) return;
+    e.preventDefault();
+    seeking = true;
+    try {
+      seekTrack.setPointerCapture(e.pointerId);
+    } catch {}
+    renderSeek(tFromClientX(e.clientX));
+  });
+  seekTrack.addEventListener('pointermove', (e) => {
+    if (!seeking) return;
+    renderSeek(tFromClientX(e.clientX));
+  });
+  function endSeek(e) {
+    if (!seeking) return;
+    seeking = false;
+    try {
+      if (seekTrack.hasPointerCapture && e.pointerId != null) seekTrack.releasePointerCapture(e.pointerId);
+    } catch {}
+    commitSeek(tFromClientX(e.clientX));
+  }
+  seekTrack.addEventListener('pointerup', endSeek);
+  seekTrack.addEventListener('pointercancel', endSeek);
+
+  video.addEventListener('loadedmetadata', () => renderSeek(video.currentTime || 0));
+  video.addEventListener('durationchange', () => renderSeek(video.currentTime || 0));
+  video.addEventListener('timeupdate', () => {
+    if (!seeking) renderSeek(video.currentTime || 0);
+  });
+  video.addEventListener('seeked', () => {
+    if (!seeking) renderSeek(video.currentTime || 0);
+  });
+
+  // ---------- 全屏：全屏整个播放器容器（保留自定义进度条/控制条） ----------
+  const fsBtn = container.querySelector('#fsBtn');
+  function updateFsBtn() {
+    if (fsBtn) fsBtn.innerHTML = ui.icon(document.fullscreenElement ? 'minimize' : 'maximize', 18);
+  }
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (playerWrap && playerWrap.requestFullscreen) {
+      playerWrap.requestFullscreen().catch(() => {});
+    }
+  });
+  document.addEventListener('fullscreenchange', updateFsBtn);
 
   // ---------- 收藏状态 ----------
   async function loadFavState() {
