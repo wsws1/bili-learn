@@ -713,7 +713,8 @@ export default function renderPlayer(container, ctx, route) {
       const t0 = e.touches[0];
       // 避开底部约 28% 的原生控件区域（那里是原生进度条/播放按钮）
       if (r.height > 0 && t0.clientY - r.top > r.height * 0.72) return;
-      g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false };
+      g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false,
+        wasPlaying: !video.paused && !video.ended };
     }, { passive: true });
     videoBox.addEventListener('touchmove', (e) => {
       if (e.touches.length !== 1) return;
@@ -724,19 +725,25 @@ export default function renderPlayer(container, ctx, route) {
         if (!d || !isFinite(d)) return;
         const rr = videoBox.getBoundingClientRect();
         if (rr.height > 0 && t0.clientY - rr.top > rr.height * 0.72) return;
-        g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false };
+        g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false,
+          wasPlaying: !video.paused && !video.ended };
         return;
       }
       const dx = t0.clientX - g.startX;
       if (!g.active && Math.abs(dx) < 10) return;
-      g.active = true;
+      if (!g.active) {
+        g.active = true;
+        // 拖动才暂停：播放中连续 seek 会被浏览器合并，帧不渲染；
+        // 暂停态下 seek 会立刻渲染目标帧，实现拖动实时预览
+        if (g.wasPlaying) video.pause();
+      }
       if (dx !== 0) e.preventDefault();
       const r = videoBox.getBoundingClientRect();
       const d = video.duration || 0;
       const target = Math.max(0, Math.min(d, g.startTime + (dx / Math.max(1, r.width)) * d));
       const now = performance.now();
-      // 节流：约 120ms 一次，给浏览器留出渲染新帧的时间，帧跟随更稳
-      if (now - g.lastApply > 120) {
+      // 暂停态 seek 渲染很快，节流放宽到 80ms 保持跟手
+      if (now - g.lastApply > 80) {
         g.lastApply = now;
         seekTo(target);
       }
@@ -751,6 +758,8 @@ export default function renderPlayer(container, ctx, route) {
           const target = Math.max(0, Math.min(d, g.startTime + ((ch.clientX - g.startX) / Math.max(1, r.width)) * d));
           seekTo(target);
         }
+        // 松手恢复播放（拖动前在播的话）
+        if (g.wasPlaying && video.paused) safePlay();
       }
       g = null;
     };
