@@ -644,39 +644,51 @@ export default function renderPlayer(container, ctx, route) {
     if (!d || !isFinite(d)) return;
     t = Math.max(0, Math.min(t, d));
     try {
-      if (state.play?.type === 'dash' && state.player && typeof state.player.seek === 'function') {
-        state.player.seek(t);
-      } else {
-        video.currentTime = t;
-      }
+      // 统一走 video.currentTime：dash.js 也会监听媒体元素 seek 事件，
+      // 比反复调用 player.seek() 更轻，滑动预览帧更跟手
+      video.currentTime = t;
     } catch (e) {}
   }
 
   const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
-  if (isTouchDevice) {
+  const videoBox = container.querySelector('.video-box');
+  if (isTouchDevice && videoBox) {
     let g = null;
-    video.addEventListener('touchstart', (e) => {
+    // 监听容器而不是 video 本身：部分 WebView 会把 video 上的触摸直接吞掉
+    videoBox.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      // 跳过“点击播放”等浮层
+      if (e.target !== video && e.target !== videoBox) return;
       const d = video.duration || 0;
-      if (!d || !isFinite(d) || e.touches.length !== 1) return;
-      const r = video.getBoundingClientRect();
+      if (!d || !isFinite(d)) return;
+      const r = videoBox.getBoundingClientRect();
       const t0 = e.touches[0];
       // 避开底部约 28% 的原生控件区域（那里是原生进度条/播放按钮）
       if (r.height > 0 && t0.clientY - r.top > r.height * 0.72) return;
       g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false };
     }, { passive: true });
-    video.addEventListener('touchmove', (e) => {
-      if (!g || e.touches.length !== 1) return;
+    videoBox.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) return;
       const t0 = e.touches[0];
+      if (!g) {
+        // touchstart 可能被原生控件吞掉（首次触摸用于显示控制条），从当前触点补启动手势
+        const d = video.duration || 0;
+        if (!d || !isFinite(d)) return;
+        const rr = videoBox.getBoundingClientRect();
+        if (rr.height > 0 && t0.clientY - rr.top > rr.height * 0.72) return;
+        g = { startX: t0.clientX, startTime: video.currentTime, lastApply: 0, active: false };
+        return;
+      }
       const dx = t0.clientX - g.startX;
       if (!g.active && Math.abs(dx) < 10) return;
       g.active = true;
       if (dx !== 0) e.preventDefault();
-      const r = video.getBoundingClientRect();
+      const r = videoBox.getBoundingClientRect();
       const d = video.duration || 0;
       const target = Math.max(0, Math.min(d, g.startTime + (dx / Math.max(1, r.width)) * d));
       const now = performance.now();
-      // 节流：约 70ms 一次，滑动时实时跳帧预览
-      if (now - g.lastApply > 70) {
+      // 节流：约 120ms 一次，给浏览器留出渲染新帧的时间，帧跟随更稳
+      if (now - g.lastApply > 120) {
         g.lastApply = now;
         seekTo(target);
       }
@@ -686,7 +698,7 @@ export default function renderPlayer(container, ctx, route) {
       if (g.active) {
         const ch = e.changedTouches && e.changedTouches[0];
         if (ch) {
-          const r = video.getBoundingClientRect();
+          const r = videoBox.getBoundingClientRect();
           const d = video.duration || 0;
           const target = Math.max(0, Math.min(d, g.startTime + ((ch.clientX - g.startX) / Math.max(1, r.width)) * d));
           seekTo(target);
@@ -694,8 +706,8 @@ export default function renderPlayer(container, ctx, route) {
       }
       g = null;
     };
-    video.addEventListener('touchend', endTouch);
-    video.addEventListener('touchcancel', endTouch);
+    videoBox.addEventListener('touchend', endTouch);
+    videoBox.addEventListener('touchcancel', endTouch);
   }
 
   // ---------- 收藏状态 ----------
