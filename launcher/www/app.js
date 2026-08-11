@@ -165,6 +165,29 @@ $('copyBtn').addEventListener('click', async () => {
   }
 });
 
+// 悬浮球保活：开关
+$('floatToggle').addEventListener('change', (e) => {
+  const on = e.target.checked;
+  window.setFloatBall(on);
+  const out = $('floatResult');
+  if (on) {
+    out.textContent = '已开启：请在系统弹窗中允许“悬浮窗”权限（若未授权）';
+    out.className = 'check-result ok';
+    logDiag('悬浮球保活: 开启，请求悬浮窗权限');
+    window.openOverlaySettings();
+  } else {
+    out.textContent = '未开启';
+    out.className = 'check-result';
+    logDiag('悬浮球保活: 关闭');
+  }
+});
+try {
+  const on = window.isFloatBallEnabled();
+  $('floatToggle').checked = !!on;
+  $('floatResult').textContent = on ? '已开启' : '未开启';
+  $('floatResult').className = 'check-result' + (on ? ' ok' : '');
+} catch {}
+
 // 外部访问地址检测：输入鸿蒙系统 WiFi IP，探测 http://IP:3210 是否可达
 $('lanForm').addEventListener('submit', async (e) => {
   e.preventDefault();

@@ -14,6 +14,8 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
+    private FloatingBall floatBall;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -31,7 +33,34 @@ public class MainActivity extends BridgeActivity {
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
         }
+        floatBall = new FloatingBall(this);
         checkBackgroundRestriction();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // 回到前台：隐藏悬浮球
+        if (floatBall != null) floatBall.hide();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // 退到后台：若开启悬浮球保活且已授权，则显示常驻悬浮球
+        if (floatBall != null && isFloatBallEnabled() && floatBall.canShow()) {
+            floatBall.show();
+        }
+    }
+
+    private boolean isFloatBallEnabled() {
+        return getSharedPreferences("zhixue", MODE_PRIVATE).getBoolean("float_ball", false);
+    }
+
+    private void setFloatBallEnabled(boolean on) {
+        getSharedPreferences("zhixue", MODE_PRIVATE).edit().putBoolean("float_ball", on).apply();
+        KeepAliveLog.i(this, "float ball enabled=" + on
+                + " overlayPerm=" + (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)));
     }
 
     // 检测电池优化/后台限制，受限时引导用户去系统设置（自启动开关是否出现由 ROM 决定，无法代码控制）
@@ -131,6 +160,30 @@ public class MainActivity extends BridgeActivity {
                 activity.startActivity(intent);
             } catch (Exception ignored) {
             }
+        }
+
+        @JavascriptInterface
+        public void openOverlaySettings() {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + activity.getPackageName()));
+                activity.startActivity(intent);
+            } catch (Exception e) {
+                try {
+                    activity.startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        @JavascriptInterface
+        public void setFloatBall(boolean on) {
+            activity.setFloatBallEnabled(on);
+        }
+
+        @JavascriptInterface
+        public boolean isFloatBallEnabled() {
+            return activity.isFloatBallEnabled();
         }
     }
 }

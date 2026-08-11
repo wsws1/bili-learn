@@ -64,3 +64,36 @@ window.openAppSettings = () => {
     } catch {}
   }
 };
+
+// 悬浮球保活：跳系统“悬浮窗”权限授权页
+window.openOverlaySettings = () => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.openOverlaySettings === 'function') {
+        window.ExternalBrowser.openOverlaySettings();
+      }
+    } catch {}
+  }
+};
+
+// 悬浮球保活：开关
+window.setFloatBall = (on) => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.setFloatBall === 'function') {
+        window.ExternalBrowser.setFloatBall(!!on);
+      }
+    } catch {}
+  }
+};
+
+window.isFloatBallEnabled = () => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (window.ExternalBrowser && typeof window.ExternalBrowser.isFloatBallEnabled === 'function') {
+        return !!window.ExternalBrowser.isFloatBallEnabled();
+      }
+    } catch {}
+  }
+  return false;
+};
