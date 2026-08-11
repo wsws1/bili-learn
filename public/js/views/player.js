@@ -178,6 +178,8 @@ export default function renderPlayer(container, ctx, route) {
       state.season = normSeason();
       state.pendingSeek = null;
       state.seekApplied = false;
+      state.resumeToast = undefined;
+      state.resumePlay = undefined;
       renderInfo();
       renderDone();
       renderTabs();
@@ -224,6 +226,10 @@ export default function renderPlayer(container, ctx, route) {
         await loadScript('/vendor/dash.all.min.js');
         if (!window.dashjs) throw new Error('DASH 播放器不可用');
         state.player = window.dashjs.MediaPlayer().create();
+        // 保留更多已播放缓冲：回拖已看过的区域不重新加载分片
+        try {
+          state.player.updateSettings({ streaming: { buffer: { bufferToKeep: 120, bufferAheadToKeep: 60 } } });
+        } catch {}
         state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
         // 看门狗：dash 8 秒未出画面 → 判断是“没拉到数据”还是“自动播放被拦截”
@@ -281,7 +287,6 @@ export default function renderPlayer(container, ctx, route) {
       b.className = 'chip' + (c === current ? ' on' : '');
       b.textContent = names[c];
       b.addEventListener('click', () => {
-        destroyPlayer();
         loadPlayWithCodec(c);
       });
       row.appendChild(b);
@@ -311,9 +316,11 @@ export default function renderPlayer(container, ctx, route) {
     const h = state.qualityHeight;
     const cur = state.play;
     if (!cur) return;
+    prepareSwitchResume();
     localStorage.setItem('zhixue:quality', String(h));
     vLoading.classList.remove('hidden');
     vError.classList.add('hidden');
+    clearTimeout(state.dashStallTimer);
     destroyPlayer();
     try {
       const qn = Number(Object.keys(QN_TO_HEIGHT).find((k) => QN_TO_HEIGHT[k] === h)) || 64;
@@ -326,7 +333,10 @@ export default function renderPlayer(container, ctx, route) {
       if (r.type === 'dash') {
         await loadScript('/vendor/dash.all.min.js');
         state.player = window.dashjs.MediaPlayer().create();
-      state.player.initialize(video, r.mpdUrl + '&height=' + h, !state.pendingSeek);
+        try {
+          state.player.updateSettings({ streaming: { buffer: { bufferToKeep: 120, bufferAheadToKeep: 60 } } });
+        } catch {}
+        state.player.initialize(video, r.mpdUrl + '&height=' + h, !state.pendingSeek);
         renderCodecs(r.codecs, r.codec);
       } else if (r.type === 'flv') {
         await loadScript('/vendor/mpegts.js');
@@ -339,6 +349,7 @@ export default function renderPlayer(container, ctx, route) {
         if (!state.pendingSeek) safePlay();
       }
       vLoading.classList.add('hidden');
+      scheduleResumeSeek();
     } catch (e) {
       vLoading.classList.add('hidden');
       showError(e.message, () => loadPlayWithHeight());
@@ -346,6 +357,8 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   async function loadPlayWithCodec(codec) {
+    prepareSwitchResume();
+    destroyPlayer();
     vLoading.classList.remove('hidden');
     try {
       const r = await api.play(state.bvid, state.cid, 80, codec);
@@ -356,9 +369,13 @@ export default function renderPlayer(container, ctx, route) {
       state.lastT = 0;
       await loadScript('/vendor/dash.all.min.js');
       state.player = window.dashjs.MediaPlayer().create();
+      try {
+        state.player.updateSettings({ streaming: { buffer: { bufferToKeep: 120, bufferAheadToKeep: 60 } } });
+      } catch {}
       state.player.initialize(video, r.mpdUrl + '&height=' + state.qualityHeight, !state.pendingSeek);
       renderCodecs(r.codecs, r.codec);
       vLoading.classList.add('hidden');
+      scheduleResumeSeek();
     } catch (e) {
       vLoading.classList.add('hidden');
       showError(e.message, () => loadPlayWithCodec(codec));
@@ -456,6 +473,24 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   // ---------- 续播：从历史记录恢复进度 ----------
+  // 切清晰度/编码前调用：保留当前播放位置与播放状态，切换后不从头播
+  function prepareSwitchResume() {
+    const d = video.duration || 0;
+    const t = video.currentTime || 0;
+    const wasPlaying = !video.paused && !video.ended;
+    if (d > 0 && isFinite(t) && t >= 1 && t < d - 1) {
+      state.pendingSeek = t;
+      state.seekApplied = false;
+      state.resumeToast = false; // 切换清晰度不弹“已续播”
+      state.resumePlay = wasPlaying;
+    } else {
+      state.pendingSeek = null;
+      state.seekApplied = false;
+      state.resumeToast = undefined;
+      state.resumePlay = undefined;
+    }
+  }
+
   async function fetchResume() {
     try {
       let max = '';
@@ -463,11 +498,24 @@ export default function renderPlayer(container, ctx, route) {
       for (let i = 0; i < 3; i++) {
         const r = await api.history(20, max, viewAt);
         if (r.code !== 0) break;
-        const list = r.data?.list || [];
+      const list = r.data?.list || [];
       const found = list.find((h) => (h.history?.bvid || h.bvid) === state.bvid);
       if (found && !found.is_finish && found.progress > 0 && found.duration && found.progress < found.duration - 3) {
+        // 分P：同一 bvid 下多个 cid，必须匹配 cid；上次看的是别的 P 则切过去再续播
+        const hcid = found.history?.cid || found.cid;
+        if (hcid && String(hcid) !== String(state.cid)) {
+          console.log('[zhixue-web] 续播切P: cid ' + state.cid + ' -> ' + hcid);
+          state.cid = hcid;
+          try {
+            renderTabs();
+            renderTab();
+          } catch {}
+        }
         state.pendingSeek = found.progress;
-        console.log('[zhixue-web] 续播命中: bvid=' + state.bvid + ' 进度=' + found.progress + '/' + found.duration);
+        state.resumeToast = true;
+        state.resumePlay = true;
+        console.log('[zhixue-web] 续播命中: bvid=' + state.bvid + ' cid=' + state.cid
+          + ' 进度=' + found.progress + '/' + found.duration);
         break;
       }
         const c = r.data?.cursor || {};
@@ -497,8 +545,8 @@ export default function renderPlayer(container, ctx, route) {
     const doPlay = () => {
       if (state.disposed || state.seekApplied) return;
       state.seekApplied = true;
-      ui.toast('已续播到 ' + ui.fmtDur(t));
-      if (video.paused) safePlay();
+      if (state.resumeToast !== false) ui.toast('已续播到 ' + ui.fmtDur(t));
+      if (video.paused && state.resumePlay !== false) safePlay();
     };
     const onSeeked = () => {
       video.removeEventListener('seeked', onSeeked);
@@ -517,7 +565,7 @@ export default function renderPlayer(container, ctx, route) {
       } catch {}
     }
     // 立即播放，让 dash 从 seek 位置缓冲
-    if (video.paused) safePlay();
+    if (video.paused && state.resumePlay !== false) safePlay();
     // 兜底：2.5 秒内未触发 seeked 也标记完成
     setTimeout(doPlay, 2500);
   }

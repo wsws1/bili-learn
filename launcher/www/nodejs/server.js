@@ -464,6 +464,29 @@ function getStreamUrl(token) {
   if (!e || Date.now() - e.at > STREAM_TTL) return null;
   return e.url;
 }
+var streamCache = /* @__PURE__ */ new Map();
+var STREAM_CACHE_MAX = 96 * 1024 * 1024;
+var STREAM_CACHE_MAX_ENTRY = 2 * 1024 * 1024;
+var streamCacheBytes = 0;
+function streamCacheSet(key, status, headers, buf) {
+  const old = streamCache.get(key);
+  if (old) streamCacheBytes -= old.buf.length;
+  streamCacheBytes += buf.length;
+  streamCache.set(key, { status, headers, buf });
+  while (streamCacheBytes > STREAM_CACHE_MAX && streamCache.size > 1) {
+    const k0 = streamCache.keys().next().value;
+    const ev = streamCache.get(k0);
+    streamCacheBytes -= ev.buf.length;
+    streamCache.delete(k0);
+  }
+}
+function streamCacheGet(key) {
+  const e = streamCache.get(key);
+  if (!e) return null;
+  streamCache.delete(key);
+  streamCache.set(key, e);
+  return e;
+}
 function xmlEscape(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -831,6 +854,14 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const token = path.slice("/api/stream/".length);
       const streamUrl = getStreamUrl(token);
       if (!streamUrl) return sendJson(res, 404, { ok: false, error: "\u6D41\u5730\u5740\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u89C6\u9891" });
+      const cacheKey = streamUrl + "|" + (req.headers.range || "");
+      const cached = streamCacheGet(cacheKey);
+      if (cached) {
+        applyCors(res);
+        res.writeHead(cached.status, cached.headers);
+        res.end(cached.buf);
+        return;
+      }
       const h = { "User-Agent": UA, Referer: REFERER };
       if (req.headers.range) h.Range = req.headers.range;
       let up;
@@ -850,6 +881,20 @@ var server = import_node_http.default.createServer(async (req, res) => {
       const cr = up.headers.get("content-range");
       if (cr) outHeaders["Content-Range"] = cr;
       applyCors(res);
+      const size = Number(cl) || 0;
+      if (size > 0 && size <= STREAM_CACHE_MAX_ENTRY) {
+        const chunks = [];
+        try {
+          for await (const chunk of up.body) chunks.push(chunk);
+        } catch {
+        }
+        const buf = Buffer.concat(chunks);
+        outHeaders["Content-Length"] = String(buf.length);
+        streamCacheSet(cacheKey, up.status, outHeaders, buf);
+        res.writeHead(up.status, outHeaders);
+        res.end(buf);
+        return;
+      }
       res.writeHead(up.status, outHeaders);
       let lastChunk = Date.now();
       const guard = setInterval(() => {

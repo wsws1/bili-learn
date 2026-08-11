@@ -435,6 +435,34 @@ function getStreamUrl(token) {
   return e.url;
 }
 
+// ---------- 视频流分片缓存（LRU，内存上限约 96MB） ----------
+// 目的：DASH 回拖已播放过的区域时，分片直接从本地缓存返回，不再反复打 B 站 CDN。
+const streamCache = new Map(); // key -> { status, headers, buf }
+const STREAM_CACHE_MAX = 96 * 1024 * 1024;
+const STREAM_CACHE_MAX_ENTRY = 2 * 1024 * 1024; // 单条上限 2MB（DASH 分片/初始化段足够）
+let streamCacheBytes = 0;
+
+function streamCacheSet(key, status, headers, buf) {
+  const old = streamCache.get(key);
+  if (old) streamCacheBytes -= old.buf.length;
+  streamCacheBytes += buf.length;
+  streamCache.set(key, { status, headers, buf });
+  while (streamCacheBytes > STREAM_CACHE_MAX && streamCache.size > 1) {
+    const k0 = streamCache.keys().next().value;
+    const ev = streamCache.get(k0);
+    streamCacheBytes -= ev.buf.length;
+    streamCache.delete(k0);
+  }
+}
+
+function streamCacheGet(key) {
+  const e = streamCache.get(key);
+  if (!e) return null;
+  streamCache.delete(key);
+  streamCache.set(key, e); // LRU 刷新
+  return e;
+}
+
 function xmlEscape(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -864,6 +892,15 @@ const server = http.createServer(async (req, res) => {
       const token = path.slice('/api/stream/'.length);
       const streamUrl = getStreamUrl(token);
       if (!streamUrl) return sendJson(res, 404, { ok: false, error: '流地址已失效，请重新打开视频' });
+      // 缓存键用真实上游 URL + Range，切清晰度/重新打开后仍可命中
+      const cacheKey = streamUrl + '|' + (req.headers.range || '');
+      const cached = streamCacheGet(cacheKey);
+      if (cached) {
+        applyCors(res);
+        res.writeHead(cached.status, cached.headers);
+        res.end(cached.buf);
+        return;
+      }
       const h = { 'User-Agent': UA, Referer: REFERER };
       if (req.headers.range) h.Range = req.headers.range;
       let up;
@@ -883,6 +920,20 @@ const server = http.createServer(async (req, res) => {
       const cr = up.headers.get('content-range');
       if (cr) outHeaders['Content-Range'] = cr;
       applyCors(res);
+      // 小响应（DASH 分片/初始化段）整体缓冲后写缓存；大响应/无长度则流式转发
+      const size = Number(cl) || 0;
+      if (size > 0 && size <= STREAM_CACHE_MAX_ENTRY) {
+        const chunks = [];
+        try {
+          for await (const chunk of up.body) chunks.push(chunk);
+        } catch {}
+        const buf = Buffer.concat(chunks);
+        outHeaders['Content-Length'] = String(buf.length);
+        streamCacheSet(cacheKey, up.status, outHeaders, buf);
+        res.writeHead(up.status, outHeaders);
+        res.end(buf);
+        return;
+      }
       res.writeHead(up.status, outHeaders);
       // 空闲看门狗：传输中超过 10 秒无数据视为卡死，断开上游与客户端，
       // 避免占满浏览器连接导致其他页面全部超时
