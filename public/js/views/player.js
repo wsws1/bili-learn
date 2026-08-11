@@ -80,6 +80,7 @@ export default function renderPlayer(container, ctx, route) {
         <div id="vTapPlay" class="load-error hidden">点击播放</div>
       </div>
       <div class="player-ctrl">
+        <select id="codecSel" class="select hidden" aria-label="编码"></select>
         <select id="qualitySel" class="select hidden" aria-label="清晰度"></select>
         <select id="speedSel" class="select" aria-label="播放速度">
           <option value="0.5">0.5×</option>
@@ -93,7 +94,6 @@ export default function renderPlayer(container, ctx, route) {
         <button id="fsBtn" class="icon-btn" aria-label="全屏" title="全屏">${ui.icon('maximize', 18)}</button>
         <button id="pipBtn" class="icon-btn" aria-label="画中画" title="画中画">${ui.icon('pip', 18)}</button>
       </div>
-      <div id="codecRow" class="codec-chips hidden" style="margin-top:8px"></div>
     </div>
 
     <div class="p-info">
@@ -275,22 +275,19 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   function renderCodecs(codecs, current) {
-    const row = container.querySelector('#codecRow');
-    row.innerHTML = '';
+    const sel = container.querySelector('#codecSel');
+    if (!sel) return;
     const order = ['avc', 'hevc', 'av1'];
     const names = { avc: 'AVC', hevc: 'HEVC', av1: 'AV1' };
     const list = order.filter((c) => codecs.includes(c));
-    if (list.length < 2) return;
-    row.classList.remove('hidden');
-    list.forEach((c) => {
-      const b = document.createElement('button');
-      b.className = 'chip' + (c === current ? ' on' : '');
-      b.textContent = names[c];
-      b.addEventListener('click', () => {
-        loadPlayWithCodec(c);
-      });
-      row.appendChild(b);
-    });
+    if (list.length < 2) {
+      sel.classList.add('hidden');
+      sel.innerHTML = '';
+      return;
+    }
+    sel.classList.remove('hidden');
+    sel.innerHTML = list.map((c) => `<option value="${c}">${names[c]}</option>`).join('');
+    sel.value = current && list.includes(current) ? current : list[0];
   }
 
   // 清晰度：默认 720P，上限取视频支持的最高档（本地记忆）
@@ -361,7 +358,8 @@ export default function renderPlayer(container, ctx, route) {
     destroyPlayer();
     vLoading.classList.remove('hidden');
     try {
-      const r = await api.play(state.bvid, state.cid, 80, codec);
+      const qn = Number(Object.keys(QN_TO_HEIGHT).find((k) => QN_TO_HEIGHT[k] === state.qualityHeight)) || 80;
+      const r = await api.play(state.bvid, state.cid, qn, codec);
       if (!r.ok) throw new Error(r.error || '播放流获取失败');
       state.play = r;
       state.startTs = Math.round(Date.now() / 1000);
@@ -577,6 +575,9 @@ export default function renderPlayer(container, ctx, route) {
   container.querySelector('#qualitySel').addEventListener('change', (e) => {
     state.qualityHeight = Number(e.target.value);
     loadPlayWithHeight();
+  });
+  container.querySelector('#codecSel').addEventListener('change', (e) => {
+    loadPlayWithCodec(e.target.value);
   });
   const pipBtn = container.querySelector('#pipBtn');
   // 浏览器原生画中画 API：桌面 Chrome 全支持；安卓 Chrome/Edge、Opera、新版 Samsung Internet 也已支持。

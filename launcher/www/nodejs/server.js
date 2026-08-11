@@ -542,7 +542,8 @@ async function getPlayData(bvid, cid, qn, codec, signal = null, noDash = false) 
       else used = "auto";
     }
     if (used === "auto") {
-      const order = ["avc", "hevc", "av1"];
+      const recommended = videos.length ? codecFamily(videos[0].codecs) : null;
+      const order = recommended ? [recommended, "hevc", "avc", "av1"] : ["hevc", "avc", "av1"];
       used = order.find((f) => videos.some((v) => codecFamily(v.codecs) === f)) || "avc";
       videos = videos.filter((v) => codecFamily(v.codecs) === used);
     }

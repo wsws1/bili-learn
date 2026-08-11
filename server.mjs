@@ -539,7 +539,12 @@ async function getPlayData(bvid, cid, qn, codec, signal = null, noDash = false) 
       else used = 'auto';
     }
     if (used === 'auto') {
-      const order = ['avc', 'hevc', 'av1'];
+      // B站接口返回的视频列表第一条视为其推荐编码；
+      // 无明确推荐时优先 HEVC（部分设备 AVC 解码异常，HEVC 更稳）
+      const recommended = videos.length ? codecFamily(videos[0].codecs) : null;
+      const order = recommended
+        ? [recommended, 'hevc', 'avc', 'av1']
+        : ['hevc', 'avc', 'av1'];
       used = order.find((f) => videos.some((v) => codecFamily(v.codecs) === f)) || 'avc';
       videos = videos.filter((v) => codecFamily(v.codecs) === used);
     }
