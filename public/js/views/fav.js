@@ -1,4 +1,6 @@
 // 收藏夹：列表 / 详情（含夹内搜索）
+import { getCache, setCache, getWatchResults } from './view-cache.js';
+
 export default function renderFav(container, ctx, route) {
   const { api, ui, user, go, setTopbar, showNav } = ctx;
   showNav(true);
@@ -6,8 +8,13 @@ export default function renderFav(container, ctx, route) {
   return renderList(container, ctx);
 }
 
+function restoreScroll(top) {
+  if (top) requestAnimationFrame(() => window.scrollTo(0, top));
+}
+
 function renderList(container, ctx) {
   const { api, ui, user, go, setTopbar } = ctx;
+  const cacheKey = 'fav:list';
   setTopbar({ title: '收藏夹', actions: [{ icon: 'refresh', label: '刷新', onClick: () => load(true) }] });
   const allFolders = [];
   let showAll = false;
@@ -77,16 +84,31 @@ function renderList(container, ctx) {
     showAll = !showAll;
     render();
   });
-  load();
+
+  // 有缓存先恢复，避免从播放页返回时列表重置
+  const saved = getCache(cacheKey);
+  if (saved) {
+    allFolders.push(...(saved.folders || []));
+    showAll = !!saved.showAll;
+    container.querySelector(':scope > .state-box')?.remove();
+    render();
+    restoreScroll(saved.scrollTop);
+  } else {
+    load();
+  }
 
   // 从后台回来（离开 ≥30 秒）自动硬刷新列表
   const onResume = () => load(true);
   document.addEventListener('app:resume', onResume);
-  return () => document.removeEventListener('app:resume', onResume);
+  return () => {
+    document.removeEventListener('app:resume', onResume);
+    setCache(cacheKey, { folders: allFolders, showAll, scrollTop: window.scrollY });
+  };
 }
 
 function renderDetail(container, ctx, mediaId) {
   const { api, ui, go, setTopbar } = ctx;
+  const cacheKey = 'fav:detail:' + mediaId;
   const state = { pn: 1, keyword: '', items: [], hasMore: false };
 
   setTopbar({ title: '收藏夹', back: true });
@@ -99,6 +121,7 @@ function renderDetail(container, ctx, mediaId) {
   `;
   const listBox = container.querySelector('#listBox');
   const moreBtn = container.querySelector('#more');
+  const kwInput = container.querySelector('#kw');
 
   api.favFolders(ctx.user?.mid).then((r) => {
     const f = (r.data?.list || []).find((x) => String(x.id) === String(mediaId));
@@ -110,8 +133,32 @@ function renderDetail(container, ctx, mediaId) {
     });
   }).catch(() => setTopbar({ title: '收藏夹', back: true }));
 
+  function renderItems() {
+    listBox.innerHTML = '';
+    if (!state.items.length) {
+      listBox.appendChild(ui.stateBox(state.keyword ? '收藏夹内没有匹配结果' : '收藏夹是空的', state.keyword ? 'search' : 'bookmark'));
+      return;
+    }
+    state.items.forEach((v) => {
+      listBox.appendChild(ui.videoRow(v, { onClick: () => go('player', { bvid: v.bvid }) }));
+    });
+  }
+
+  // 返回列表时：把本次观看中取消收藏的条目剔除
+  function mergeWatchRemovals() {
+    let removed = 0;
+    getWatchResults().forEach((w, bvid) => {
+      if (w.unfavored === true) {
+        const before = state.items.length;
+        state.items = state.items.filter((it) => it.bvid !== bvid);
+        removed += before - state.items.length;
+      }
+    });
+    return removed;
+  }
+
   let kwTimer = null;
-  container.querySelector('#kw').addEventListener('input', (e) => {
+  kwInput.addEventListener('input', (e) => {
     clearTimeout(kwTimer);
     kwTimer = setTimeout(() => {
       state.keyword = e.target.value.trim();
@@ -121,8 +168,10 @@ function renderDetail(container, ctx, mediaId) {
   });
 
   async function load(replace = false) {
-    if (replace) listBox.innerHTML = '';
-    if (!listBox.children.length) listBox.appendChild(ui.loadBox('加载中…'));
+    if (replace) {
+      listBox.innerHTML = '';
+      listBox.appendChild(ui.loadBox('加载中…'));
+    }
     moreBtn.classList.add('hidden');
     try {
       const r = await api.favList(mediaId, state.pn, state.keyword);
@@ -136,17 +185,27 @@ function renderDetail(container, ctx, mediaId) {
         dur: m.duration ? ui.fmtDur(m.duration) : '',
       }));
       listBox.querySelector('.state-box')?.remove();
-      if (!items.length && state.pn === 1) {
+      if (!items.length && state.pn === 1 && replace) {
+        listBox.innerHTML = '';
         listBox.appendChild(ui.stateBox(state.keyword ? '收藏夹内没有匹配结果' : '收藏夹是空的', state.keyword ? 'search' : 'bookmark'));
+        state.hasMore = false;
+        moreBtn.classList.add('hidden');
         return;
       }
       state.hasMore = !!r.data?.has_more;
-      state.items = replace ? items : state.items.concat(items);
-      if (replace) listBox.innerHTML = '';
-      state.items.forEach((v) => {
-        listBox.appendChild(ui.videoRow(v, { onClick: () => go('player', { bvid: v.bvid }) }));
-      });
+      // 加载更多只追加新增条目（按 bvid 去重），不再把前面的数据重复展示
+      const newItems = replace ? items : items.filter((it) => !state.items.some((o) => o.bvid === it.bvid));
+      if (replace) state.items = items;
+      else state.items = state.items.concat(newItems);
+      if (replace) {
+        renderItems();
+      } else {
+        newItems.forEach((v) => {
+          listBox.appendChild(ui.videoRow(v, { onClick: () => go('player', { bvid: v.bvid }) }));
+        });
+      }
       moreBtn.classList.toggle('hidden', !state.hasMore);
+      setCache(cacheKey, { ...state, scrollTop: window.scrollY });
     } catch (e) {
       if (replace) {
         listBox.innerHTML = '';
@@ -162,10 +221,27 @@ function renderDetail(container, ctx, mediaId) {
     load();
   });
 
-  load(true);
+  // 有缓存先恢复（含滚动位置），并合并本次观看结果
+  const saved = getCache(cacheKey);
+  if (saved) {
+    state.pn = saved.pn || 1;
+    state.keyword = saved.keyword || '';
+    state.items = saved.items || [];
+    state.hasMore = !!saved.hasMore;
+    kwInput.value = state.keyword;
+    mergeWatchRemovals();
+    renderItems();
+    moreBtn.classList.toggle('hidden', !state.hasMore);
+    restoreScroll(saved.scrollTop);
+  } else {
+    load(true);
+  }
 
   // 从后台回来（离开 ≥30 秒）自动刷新当前收藏夹内容
   const onResume = () => load(true);
   document.addEventListener('app:resume', onResume);
-  return () => document.removeEventListener('app:resume', onResume);
+  return () => {
+    document.removeEventListener('app:resume', onResume);
+    setCache(cacheKey, { ...state, scrollTop: window.scrollY });
+  };
 }

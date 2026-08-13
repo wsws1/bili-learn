@@ -24,7 +24,7 @@ export const state = {
 };
 
 // 版本号：升级后更新，方便在「我的」页面确认手机运行的是哪个构建
-export const APP_VERSION = '2026.08.11.1';
+export const APP_VERSION = '2026.08.13.1';
 
 const NAV = [
   { route: 'home', label: '首页', icon: 'home' },

@@ -1,4 +1,6 @@
 // 搜索：全站 / 收藏夹 / 历史记录 三范围
+import { getCache, setCache } from './view-cache.js';
+
 const RECENT_KEY = 'zhixue:recent';
 
 export default function renderSearch(container, ctx, route) {
@@ -42,10 +44,36 @@ export default function renderSearch(container, ctx, route) {
     });
   }
 
+  // 把关键词/范围写进 URL（不触发路由重渲染），返回本页时能精确恢复
+  function syncUrl() {
+    try {
+      const qs = new URLSearchParams({ q: state.keyword, scope: state.scope });
+      history.replaceState(null, '', '#/search?' + qs.toString());
+    } catch {}
+  }
+
+  function cacheKey() {
+    return 'search:' + state.scope + ':' + state.keyword;
+  }
+
+  function saveCache() {
+    setCache(cacheKey(), {
+      keyword: state.keyword,
+      scope: state.scope,
+      page: state.page,
+      items: state.items,
+      hasMore: state.hasMore,
+      nextMax: state.nextMax,
+      nextViewAt: state.nextViewAt,
+      scrollTop: window.scrollY,
+    });
+  }
+
   container.querySelectorAll('#scopeChips .chip').forEach((c) => {
     c.addEventListener('click', () => {
       state.scope = c.dataset.scope;
       markScope();
+      syncUrl();
       if (state.keyword) run(true);
     });
   });
@@ -55,6 +83,7 @@ export default function renderSearch(container, ctx, route) {
     if (!state.keyword) return;
     saveRecent(state.keyword);
     state.page = 1;
+    syncUrl();
     run(true);
   }
 
@@ -95,10 +124,12 @@ export default function renderSearch(container, ctx, route) {
   let runId = 0;
   async function run(replace) {
     const id = ++runId;
-    resultBox.innerHTML = '';
-    resultBox.appendChild(ui.loadBox('搜索中…'));
+    if (replace) {
+      resultBox.innerHTML = '';
+      resultBox.appendChild(ui.loadBox('搜索中…'));
+      recentBox.innerHTML = '';
+    }
     moreBtn.classList.add('hidden');
-    recentBox.innerHTML = '';
     try {
       let r;
       if (state.scope === 'fav') r = await api.searchFav(state.keyword, state.page);
@@ -112,24 +143,28 @@ export default function renderSearch(container, ctx, route) {
       if (!r.ok && r.code !== 0) throw new Error(r.message || '搜索失败');
       const items = r.items || [];
       resultBox.querySelector('.state-box')?.remove();
-      if (!items.length && state.page === 1) {
+      if (!items.length && state.page === 1 && replace) {
         if (id !== runId) return;
+        resultBox.innerHTML = '';
         resultBox.appendChild(ui.stateBox('没有找到「' + state.keyword + '」' + (state.scope === 'fav' ? ' 的收藏内容' : state.scope === 'history' ? ' 的历史记录' : ''), 'search'));
+        state.items = [];
+        state.hasMore = false;
         return;
       }
-      state.items = replace ? items : state.items.concat(items);
+      // 加载更多只追加新增条目（按 bvid 去重），不清空结果、不重置滚动
+      const newItems = replace ? items : items.filter((it) => !state.items.some((o) => o.bvid === it.bvid));
+      state.items = replace ? items : state.items.concat(newItems);
       if (replace) resultBox.innerHTML = '';
       if (id !== runId) return;
-      state.items.forEach((v) => {
-        resultBox.appendChild(ui.videoRow(v, {
-          progress: v.progress,
-          onClick: () => go('player', { bvid: v.bvid }),
-        }));
+      const renderList = replace ? state.items : newItems;
+      renderList.forEach((v) => {
+        resultBox.appendChild(ui.videoRow(v, { progress: v.progress, onClick: () => go('player', { bvid: v.bvid }) }));
       });
       if (state.scope === 'all') state.hasMore = r.hasMore;
       else if (state.scope === 'fav') state.hasMore = r.hasMore;
       else state.hasMore = !!state.nextMax;
       moreBtn.classList.toggle('hidden', !state.hasMore);
+      saveCache();
     } catch (e) {
       if (id !== runId) return; // 被新搜索/切页取代的旧请求，错误也丢弃
       resultBox.innerHTML = '';
@@ -144,7 +179,20 @@ export default function renderSearch(container, ctx, route) {
 
   markScope();
   renderRecent();
-  if (state.keyword) {
+  // 有缓存先恢复（同一关键词+范围），返回本页不重新搜索、不跳动
+  const saved = getCache(cacheKey());
+  if (saved && saved.keyword === state.keyword && saved.scope === state.scope) {
+    state.page = saved.page || 1;
+    state.items = saved.items || [];
+    state.hasMore = !!saved.hasMore;
+    state.nextMax = saved.nextMax || '';
+    state.nextViewAt = saved.nextViewAt || '';
+    state.items.forEach((v) => {
+      resultBox.appendChild(ui.videoRow(v, { progress: v.progress, onClick: () => go('player', { bvid: v.bvid }) }));
+    });
+    moreBtn.classList.toggle('hidden', !state.hasMore);
+    if (saved.scrollTop) requestAnimationFrame(() => window.scrollTo(0, saved.scrollTop));
+  } else if (state.keyword) {
     kwInput.value = state.keyword;
     run(true);
   }
@@ -154,5 +202,8 @@ export default function renderSearch(container, ctx, route) {
     if (state.keyword) run(true);
   };
   document.addEventListener('app:resume', onResume);
-  return () => document.removeEventListener('app:resume', onResume);
+  return () => {
+    document.removeEventListener('app:resume', onResume);
+    saveCache();
+  };
 }

@@ -1,4 +1,6 @@
 // 播放页：DASH / MP4 / FLV + 分P + 合集 + 收藏状态 + 笔记 + 评论 + 进度上报与续播
+import { recordWatch } from './view-cache.js';
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -1084,6 +1086,18 @@ export default function renderPlayer(container, ctx, route) {
   }
 
   return () => {
+    // 记录本次观看结果（进度/看完/收藏变化），供列表页返回时原地更新
+    try {
+      const has = state.fav && state.fav.bvid === state.bvid
+        ? (state.fav.folders || []).some((f) => f.has)
+        : undefined;
+      recordWatch(state.bvid, {
+        progress: video.currentTime || 0,
+        duration: video.duration || 0,
+        finished: !!video.ended,
+        unfavored: has === undefined ? undefined : !has,
+      });
+    } catch {}
     const inPip = document.pictureInPictureElement === video && !video.paused;
     if (inPip) {
       console.log('[zhixue-web] 小窗转移（后台续播）: ' + state.bvid);
